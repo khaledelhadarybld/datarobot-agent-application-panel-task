@@ -19,16 +19,19 @@ import pulumi_datarobot as datarobot
 from datarobot_pulumi_utils.pulumi.stack import PROJECT_NAME
 
 # these configs are expected in the web application
-DATAROBOT_OAUTH_PROVIDERS: Final[str] = "DATAROBOT_OAUTH_PROVIDERS"
 GOOGLE_CLIENT_ID: Final[str] = "GOOGLE_CLIENT_ID"
 GOOGLE_CLIENT_SECRET: Final[str] = "GOOGLE_CLIENT_SECRET"
 BOX_CLIENT_ID: Final[str] = "BOX_CLIENT_ID"
 BOX_CLIENT_SECRET: Final[str] = "BOX_CLIENT_SECRET"
+MICROSOFT_CLIENT_ID: Final[str] = "MICROSOFT_CLIENT_ID"
+MICROSOFT_CLIENT_SECRET: Final[str] = "MICROSOFT_CLIENT_SECRET"
 
 google_client_id = os.environ.get(GOOGLE_CLIENT_ID)
 google_client_secret = os.environ.get(GOOGLE_CLIENT_SECRET)
 box_client_id = os.environ.get(BOX_CLIENT_ID)
 box_client_secret = os.environ.get(BOX_CLIENT_SECRET)
+microsoft_client_id = os.environ.get(MICROSOFT_CLIENT_ID)
+microsoft_client_secret = os.environ.get(MICROSOFT_CLIENT_SECRET)
 
 app_runtime_parameters = []
 
@@ -79,5 +82,31 @@ if box_client_id and box_client_secret:
             type="credential",
             key=BOX_CLIENT_SECRET,
             value=box_client_secret_cred.id,
+        ),
+    ]
+
+if microsoft_client_id and microsoft_client_secret:
+    pulumi.info(
+        "Microsoft credentials found, adding to application runtime parameters."
+    )
+    pulumi.export("Microsoft Client ID", microsoft_client_id)
+
+    microsoft_client_secret_cred = datarobot.ApiTokenCredential(
+        f"[{PROJECT_NAME}] Agent Application Microsoft Client",
+        args=datarobot.ApiTokenCredentialArgs(
+            api_token=str(microsoft_client_secret),
+        ),
+    )
+
+    app_runtime_parameters += [
+        datarobot.ApplicationSourceRuntimeParameterValueArgs(
+            type="string",
+            key=MICROSOFT_CLIENT_ID,
+            value=microsoft_client_id,
+        ),
+        datarobot.ApplicationSourceRuntimeParameterValueArgs(
+            type="credential",
+            key=MICROSOFT_CLIENT_SECRET,
+            value=microsoft_client_secret_cred.id,
         ),
     ]

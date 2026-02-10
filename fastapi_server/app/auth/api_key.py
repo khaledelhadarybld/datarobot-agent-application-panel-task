@@ -12,20 +12,67 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+from typing import Optional
 from urllib.parse import urljoin
 
 import httpx
 from datarobot.auth.oauth import Profile
-from fastapi import status
-from fastapi.security import HTTPBearer
+from fastapi import HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.security.base import SecurityBase
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-dr_api_key_schema = HTTPBearer(
+
+class DataRobotAPIKeyHeader(SecurityBase):
+    """
+    Custom security scheme that accepts API keys.
+    """
+
+    def __init__(
+        self,
+        *,
+        scheme_name: str = "DataRobot API Key",
+        description: str = "DataRobot API Key for authentication. "
+        "The key can be passed either in the `Authorization` header as `Bearer <api_key>` "
+        "or in via the `x-datarobot-api-key` header, when proxied by custom application.",
+        auto_error: bool = True,
+    ):
+        self.scheme_name = scheme_name
+        self.description = description
+        self.auto_error = auto_error
+        self.model = HTTPAuthorizationCredentials  # type: ignore[assignment]
+
+    async def __call__(
+        self, request: Request
+    ) -> Optional[HTTPAuthorizationCredentials]:
+        # Try Authorization header first
+        if authorization := request.headers.get("Authorization"):
+            parts = authorization.split(" ", 1)
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                return HTTPAuthorizationCredentials(
+                    scheme="Bearer", credentials=parts[1]
+                )
+
+        # Try x-datarobot-api-key header
+        api_key = request.headers.get("x-datarobot-api-key")
+        if api_key:
+            return HTTPAuthorizationCredentials(scheme="ApiKey", credentials=api_key)
+
+        if self.auto_error:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not Authenticated.",
+            )
+        return None
+
+
+dr_api_key_schema = DataRobotAPIKeyHeader(
     scheme_name="DataRobot API Key",
     description="DataRobot API Key for authentication. "
-    "The key should be passed in the `Authorization` header as `Bearer <api_key>`.",
+    "The key can be passed in the `Authorization` header as `Bearer <api_key>` "
+    "or in the `x-datarobot-api-key` header, when proxied by custom application.",
 )
 
 

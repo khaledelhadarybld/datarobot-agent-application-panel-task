@@ -14,6 +14,7 @@
 import logging
 import uuid
 
+from datarobot.auth.exceptions import OAuthValidationErr
 from datarobot.auth.oauth import (
     OAuthData,
     OAuthProvider,
@@ -418,7 +419,18 @@ async def get_token(
         },
     )
 
-    token_data = await oauth_tokens.get_access_token(identity, payload.scope)
+    try:
+        token_data = await oauth_tokens.get_access_token(identity, payload.scope)
+    except OAuthValidationErr:
+        err = ErrorSchema(
+            code=ErrorCodes.NOT_AUTHORIZED,
+            message=(
+                "Unable to retrieve access token. Authorize the provider and try again."
+            ),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=err.model_dump()
+        )
 
     return token_data
 

@@ -20,6 +20,7 @@ from fastapi.exceptions import HTTPException
 from app import Deps
 from app.auth.api_key import DRUser
 from app.auth.ctx import AUTH_SESS_KEY, DRAppCtx, get_auth_ctx, get_datarobot_ctx
+from app.auth.oauth import OAuthImpl
 from app.users.identity import AuthSchema, IdentityCreate, ProviderType
 from app.users.user import UserCreate
 
@@ -50,6 +51,36 @@ async def test__get_auth_ctx__new_visit__dr_user(
     assert identity.type == AuthSchema.DATAROBOT
     assert identity.provider_type == ProviderType.DATAROBOT_USER
     assert identity.provider_user_id == dr_user.id
+
+
+@pytest.mark.parametrize(
+    "oauth_impl,expected_value",
+    [
+        (OAuthImpl.AUTHLIB, "authlib"),
+        (OAuthImpl.DATAROBOT, "datarobot"),
+    ],
+)
+async def test__get_auth_ctx__metadata_includes_oauth_implementation(
+    db_deps: Deps, dr_user: DRUser, oauth_impl: OAuthImpl, expected_value: str
+) -> None:
+    """Test that auth context metadata includes oauth_implementation and application_endpoint."""
+    req = AsyncMock(spec=Request)
+    req.session = {}
+    req.app.state.deps = db_deps
+
+    db_deps.config.oauth_impl = oauth_impl
+    db_deps.api_key_validator.validate.return_value = dr_user  # type: ignore[attr-defined]
+    dr_ctx = DRAppCtx(api_key="test-scoped-api-key")
+
+    auth_ctx = await get_auth_ctx(req, dr_ctx)
+
+    assert auth_ctx
+    assert auth_ctx.metadata
+    assert auth_ctx.metadata["oauth_implementation"] == expected_value
+    assert "application_endpoint" in auth_ctx.metadata
+    assert (
+        auth_ctx.metadata["application_endpoint"] == db_deps.config.application_endpoint
+    )
 
 
 async def test__get_auth_ctx__new_visit__ext_email(db_deps: Deps) -> None:

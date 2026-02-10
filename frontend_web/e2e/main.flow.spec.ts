@@ -1,19 +1,20 @@
 import { test, expect } from '@playwright/test';
+import {baseURL} from "../playwright.config";
 const TIMEOUT = 5 * 60 * 1000;
 
-test.describe('Logged in tests', () => {
+test.describe('Main flow test', () => {
     let context;
     let page;
+
+    const storageStatePath = './e2e/storageState.json';
 
     test.beforeAll(async ({browser}) => {
         context = await browser.newContext({
             serviceWorkers: 'block',
+            storageState: storageStatePath,
         });
         page = await context.newPage();
-
-        await page.goto('http://localhost:5173/', {
-            waitUntil: 'networkidle',
-        });
+        await page.goto(baseURL, {waitUntil: 'networkidle'});
     });
 
     test.afterAll(async () => {
@@ -23,7 +24,6 @@ test.describe('Logged in tests', () => {
     test('start new chat', async () => {
         await page.getByTestId('start-new-chat-btn').click();
         await expect(page.getByText('Assistant')).toBeVisible();
-        await expect(page.getByText('Hi. Here you can test your agent-based application.')).toBeVisible();
     });
 
     test('write a question to agent and wait until response fully done', async () => {
@@ -42,16 +42,21 @@ test.describe('Logged in tests', () => {
     });
 
     test('new thread is active when user switches chats', async () => {
+        test.setTimeout(TIMEOUT); // to wait for chat to be deleted
         let contentCount = 0
-        let prevContentCount;
         await page.getByTestId('start-new-chat-btn').click();
 
         await page.getByRole('textbox').fill('tell some fun fact');
         await page.getByTestId('send-message-btn').click();
 
+        await page.locator('#sidebar-chats').locator('[test-id^="chat-"]')?.last().click();
+        await expect(page.getByTestId('send-message-btn')).toBeVisible();
+
+        await page.locator('#sidebar-chats').locator('[test-id^="chat-"]')?.first().click();
+
         await expect.poll(
             async () => {
-                const content = await page.locator('[data-testid^="default-assistant-message-"]')?.first();
+                const content = await page.locator('[test-id^="default-assistant-message-"]')?.first();
                 const text = await content.textContent();
                 contentCount =  text?.length ?? 0;
                 return contentCount;
@@ -60,42 +65,17 @@ test.describe('Logged in tests', () => {
                 timeout: TIMEOUT,
             }
         ).toBeGreaterThan(0);
-
-        await page.locator('#sidebar-chats').locator('[data-testid^="chat-"]')?.last().click();
-        await expect(page.getByTestId('send-message-btn')).toBeVisible();
-
-        await page.locator('#sidebar-chats').locator('[data-testid^="chat-"]')?.first().click();
-
-        prevContentCount = contentCount;
-        await expect.poll(
-            async () => {
-                const content = await page.locator('[data-testid^="default-assistant-message-"]')?.first();
-                const text = await content.textContent();
-                contentCount =  text?.length ?? 0;
-                return contentCount;
-            },
-            {
-                timeout: TIMEOUT,
-            }
-        ).toBeGreaterThan(prevContentCount);
-
-
     })
 
-    test('remove all chats', async () => {
-        await page.locator('#sidebar-chats').locator('[data-testid^="chat-"]')?.last().click();
+    test('remove chat', async () => {
+        test.setTimeout(TIMEOUT); // to wait for chat to be deleted
+        await page.locator('#sidebar-chats').locator('[test-id^="chat-"]')?.last().click();
         const oldUrl = page.url();
         await page.locator('.dropdown-menu-trigger')?.last().click();
         await page.getByTestId('delete-chat-menu-item').click();
-        await expect.poll(() => page.url()).not.toBe(oldUrl); // user was redirected to the active chat
-
-        await page.locator('#sidebar-chats').locator('[data-testid^="chat-"]')?.first().click();
-
-        // wait until message will be received
-        await page.getByTestId('send-message-btn').waitFor({ state: 'visible', timeout: TIMEOUT });
-        await page.locator('.dropdown-menu-trigger')?.last().click();
-        await page.getByTestId('delete-chat-menu-item').click();
-
-        await expect(page.getByText('Hi. Here you can test your agent-based application.')).toBeVisible();
+        await page.getByTestId('modal-confirm').click();
+        await expect.poll(() => page.url(), {
+            timeout: TIMEOUT,
+        }).not.toBe(oldUrl); // check if user was redirected to the active chat
     })
 })

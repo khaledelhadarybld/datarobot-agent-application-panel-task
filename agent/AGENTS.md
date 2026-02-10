@@ -36,15 +36,12 @@ class MyAgent(LangGraphAgent):
 ```python
 def llm(
     self,
-    preferred_model: str | None = None,
     auto_model_override: bool = True,
 ) -> ChatLiteLLM:
-    api_base = self.litellm_api_base(config.llm_deployment_id)
-    model = preferred_model
-    if preferred_model is None:
-        model = config.llm_default_model
-    if auto_model_override and not config.use_datarobot_llm_gateway:
-        model = config.llm_default_model
+    api_base = self.litellm_api_base(self.config.llm_deployment_id)
+    model = self.model or self.default_model
+    if auto_model_override and not self.config.use_datarobot_llm_gateway:
+        model = self.default_model
     if self.verbose:
         print(f"Using model: {model}")
     return ChatLiteLLM(
@@ -102,7 +99,7 @@ Agent nodes are typically created using `create_react_agent`.
 @property
 def agent_node(self) -> Any:
     return create_react_agent(
-        self.llm(preferred_model="datarobot/azure/gpt-4o-mini"),
+        self.llm(),
         tools=self.tools,  # or [] for no tools
         prompt=make_system_prompt(
             "Your agent's system prompt here."
@@ -123,8 +120,8 @@ dr task run agent:install
 
 ### 5. Preferred LLM model
 
-Preferred model should be set in each ```self.llm(preferred_model="{preffered_model_here}")``` invocation.
-**Important**: `preferred_model` parameter must be prefixed with `datarobot/`.
+Preferred model should be set using ```self.model = "{preferred_model_here}"``` which will then be read in each ```self.llm()``` invocation.
+**Important**: `self.model` parameter must be prefixed with `datarobot/`.
 
 ## Agent Testing
 

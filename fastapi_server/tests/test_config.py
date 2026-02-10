@@ -15,6 +15,8 @@
 import os
 from unittest.mock import patch
 
+import pytest
+
 from app import Config
 
 
@@ -36,3 +38,44 @@ def test__config__load_env_vars() -> None:
         assert len(config.datarobot_oauth_providers) == 2
         assert config.datarobot_endpoint == "https://api.test.datarobot.com"
         assert config.datarobot_api_token == "local-test-datarobot-api-key"
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "https://api.test.datarobot.com/api/v2",
+        "https://api.test.datarobot.com/api/v2/",
+        "https://api.test.datarobot.com/",
+        "https://api.test.datarobot.com",
+    ],
+)
+def test__config__application_endpoint(endpoint: str) -> None:
+    base_env = dict(
+        MLOPS_RUNTIME_PARAM_SESSION_SECRET_KEY='{"type":"credential","payload":{"credentialType":"api_token","apiToken":"test-key"}}',
+        DATAROBOT_ENDPOINT=endpoint,
+        DATAROBOT_API_TOKEN="test-token",
+    )
+
+    # Without application_id - uses localhost with default port
+    with patch.dict(os.environ, base_env, clear=True):
+        config = Config()
+        assert config.application_id is None
+        assert config.application_endpoint == "http://localhost:8080/api/v1"
+
+    # Without application_id - uses localhost with custom PORT
+    with patch.dict(os.environ, {**base_env, "PORT": "9000"}, clear=True):
+        config = Config()
+        assert config.application_endpoint == "http://localhost:9000/api/v1"
+
+    # With application_id - uses datarobot_endpoint
+    with patch.dict(
+        os.environ,
+        {**base_env, "APPLICATION_ID": "6978ed7637491dea39936243"},
+        clear=True,
+    ):
+        config = Config()
+        assert config.application_id == "6978ed7637491dea39936243"
+        assert (
+            config.application_endpoint
+            == "https://api.test.datarobot.com/custom_applications/6978ed7637491dea39936243/api/v1"
+        )

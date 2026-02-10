@@ -111,6 +111,9 @@ Click the drop down below that corresponds to your operating system:
 
 </details>
 
+> [!NOTE]
+> After installing `uv`, run `uv tool update-shell` once so your shell picks up the updated `PATH` before using `uv tool run` or invoking tools installed via `uv tool install`.
+
 > [!IMPORTANT]
 > You will also need a compatible C++ compiler and build tools installed on your system to compile some Python packages.
 

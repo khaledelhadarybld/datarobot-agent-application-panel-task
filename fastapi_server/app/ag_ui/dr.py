@@ -242,9 +242,8 @@ class DataRobotAGUIAgent(AGUIAgent):
                     "content": input_message.content,
                 }
             )
-        # Agent does not currently use the `model` parameter,, butintreface requires it.
         return {
             "messages": messages,
-            "model": "custom-model",
+            "model": "datarobot/azure/gpt-5-mini-2025-08-07",
             "stream": True,
         }

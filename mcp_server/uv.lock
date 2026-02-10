@@ -783,7 +783,7 @@ wheels = [
 
 [[package]]
 name = "datarobot-genai"
-version = "0.2.43"
+version = "0.3.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -803,9 +803,9 @@ dependencies = [
     { name = "ragas" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0b/e7/33fb84773609232370a4e74a13fe904991ed853ea362e36c8c76b47836d4/datarobot_genai-0.2.43.tar.gz", hash = "sha256:8887b2f15185550409ec6886ee09c17ed1496d38ad492663baf9e24c0a1dd35f", size = 150248, upload-time = "2026-01-28T14:36:45.909Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/38/ce/4583d719af44bba8adaaf79d16afbca0867f2ff24c56fa62227ee47b0ab7/datarobot_genai-0.3.6.tar.gz", hash = "sha256:c6032ba6364dc1a5babd93139e8cd5fe71e618a6cddd21791212b4f08eabb998", size = 162181, upload-time = "2026-02-05T08:36:27.2Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e0/a3/2162d57019539869d3a7a0971cc040f91ff13c60eee826052af416adef99/datarobot_genai-0.2.43-py3-none-any.whl", hash = "sha256:9bcc5b7f43ae9ffca7a061b9eef5f24578bfb610e0816d2501f0293670da02d8", size = 238253, upload-time = "2026-01-28T14:36:44.17Z" },
+    { url = "https://files.pythonhosted.org/packages/97/17/c269b24b10120f38baa3b8866f999faa9c869a3bc991ebaad80edb8d0765/datarobot_genai-0.3.6-py3-none-any.whl", hash = "sha256:fa9433bbc700de6999cdd8541e884b02bbcc7c680abf9c8caa2761fb110fcd33", size = 253906, upload-time = "2026-02-05T08:36:25.67Z" },
 ]
 
 [package.optional-dependencies]
@@ -821,9 +821,11 @@ drmcp = [
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
+    { name = "perplexityai" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
+    { name = "tavily-python" },
 ]
 
 [[package]]
@@ -2344,7 +2346,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "datarobot-genai", extras = ["drmcp"], specifier = ">=0.2.43,<0.3.0" },
+    { name = "datarobot-genai", extras = ["drmcp"], specifier = ">=0.3.1,<0.4.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "openai", marker = "extra == 'dev'", specifier = ">=1.12.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.6.0" },
@@ -2355,7 +2357,7 @@ requires-dist = [
     { name = "responses", marker = "extra == 'dev'", specifier = ">=0.25.8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "agentic-playground"]
 
 [[package]]
 name = "mdurl"
@@ -3171,6 +3173,23 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fa/2a/52a8da6fe965dea6192eb716b357558e103aea0a1e9a8352ad575a8406ca/pathvalidate-3.3.1.tar.gz", hash = "sha256:b18c07212bfead624345bb8e1d6141cdcf15a39736994ea0b94035ad2b1ba177", size = 63262, upload-time = "2025-06-15T09:07:20.736Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/70/875f4a23bfc4731703a5835487d0d2fb999031bd415e7d17c0ae615c18b7/pathvalidate-3.3.1-py3-none-any.whl", hash = "sha256:5263baab691f8e1af96092fa5137ee17df5bdfbd6cff1fcac4d6ef4bc2e1735f", size = 24305, upload-time = "2025-06-15T09:07:19.117Z" },
+]
+
+[[package]]
+name = "perplexityai"
+version = "0.27.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fc/c6/8d85888bf82836d1505a0ca80d0d00f7d3448d2282d532fea7a37bb71973/perplexityai-0.27.0.tar.gz", hash = "sha256:88298594e47323428d88e15ee458df0a2181744c68bf6d251f8b60ec5fcc2142", size = 122986, upload-time = "2026-01-27T20:03:06.116Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/01/52/61e27d325ece0fc5eea2966c2588ea9986a24c64ea5c6ce7cbc802a3d5d4/perplexityai-0.27.0-py3-none-any.whl", hash = "sha256:9d1119db39d780a5e14a52ae05e91baa37c8dc42a686bac0e39d51c67849ba36", size = 113748, upload-time = "2026-01-27T20:03:05.116Z" },
 ]
 
 [[package]]
@@ -4603,6 +4622,20 @@ dependencies = [
     { name = "ruamel-yaml" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/59/ac/cde8c4ddafa3bf46d9884d7c9e327aa50edb7a978e9a1b3f673b2a0f2750/strictyaml-1.4.2.tar.gz", hash = "sha256:ddb4e4e807dd510c9bc7fc50fc8d1369ed696ed5cc92d494b5e752ba8276a5a2", size = 50539, upload-time = "2021-05-31T16:59:28.833Z" }
+
+[[package]]
+name = "tavily-python"
+version = "0.7.21"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "requests" },
+    { name = "tiktoken" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ff/1f/9d5c4ca7034754d1fc232af64638b905162bdf3012e9629030e3d755856f/tavily_python-0.7.21.tar.gz", hash = "sha256:897bedf9b1c2fad8605be642e417d6c7ec1b79bf6199563477cf69c4313f824a", size = 21813, upload-time = "2026-01-30T16:57:33.186Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/39/85e5be4e9a912022f86f38288d1f4dd2d100b60ec75ebf3da37ca0122375/tavily_python-0.7.21-py3-none-any.whl", hash = "sha256:acfb5b62f2d1053d56321b4fb1ddfd2e98bb975cc4446b86b3fe2d3dd0850288", size = 17957, upload-time = "2026-01-30T16:57:32.278Z" },
+]
 
 [[package]]
 name = "tenacity"

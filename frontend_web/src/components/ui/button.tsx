@@ -51,7 +51,7 @@ function Button({
   return (
     <Comp
       data-slot="button"
-      data-testid={testId}
+      test-id={testId}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />

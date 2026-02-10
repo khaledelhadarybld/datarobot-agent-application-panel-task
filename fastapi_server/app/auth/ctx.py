@@ -210,7 +210,13 @@ async def get_auth_ctx(
             ).model_dump(),
         )
     auth_ctx = user.to_auth_ctx()
-    auth_ctx.metadata = {"dr_ctx": dr_ctx.model_dump()}
+
+    config: Config = request.app.state.deps.config
+    auth_ctx.metadata = {
+        "dr_ctx": dr_ctx.model_dump(),
+        "oauth_implementation": config.oauth_impl.value,
+        "application_endpoint": config.application_endpoint,
+    }
 
     request.session[AUTH_SESS_KEY] = auth_ctx.model_dump()
 

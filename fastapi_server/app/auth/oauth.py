@@ -111,7 +111,7 @@ def get_oauth(config: "Config") -> AsyncOAuthComponent:
                 "`MICROSOFT_CLIENT_ID`, and `MICROSOFT_CLIENT_SECRET` environment variables to set them up."
             )
 
-        return AuthlibOAuth()
+        return AuthlibOAuth(provider_config=provider_configs)
 
     raise ValueError(
         f"Unsupported OAuth implementation: {config.oauth_impl}. "

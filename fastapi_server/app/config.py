@@ -11,8 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-
+import os
 from typing import Sequence
 
 from core.telemetry.logging import FormatType, LogLevel
@@ -70,3 +69,15 @@ class Config(DataRobotAppFrameworkBaseSettings):
 
     # The number of characters to stream before persisting
     minimal_chunks_to_persist: int = 5000
+
+    application_id: str | None = None
+
+    @property
+    def application_endpoint(self) -> str:
+        """Construct the application endpoint URL"""
+        if not self.application_id:
+            port = os.getenv("PORT", "8080")
+            return f"http://localhost:{port}/api/v1"
+
+        base_url = self.datarobot_endpoint.rstrip("/").removesuffix("/api/v2")
+        return f"{base_url}/custom_applications/{self.application_id}/api/v1"

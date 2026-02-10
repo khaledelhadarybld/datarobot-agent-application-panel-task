@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## 11.5.0
+- Remove `preferred_model` argument from `MyAgent.llm` method
+- Lower `datarobot-drum` version upper limit to avoid `asyncio` errors in the playground
+- Add crew function to crewai
+- Stop testing Python 3.10 in CI
+- Improve `MyAgent` initialization to fall back to the configured default model when the provided model is `"unknown"` or `"datarobot-deployed-llm"`, avoiding invalid model selection.
+- Pin `anyio` and `packaging` to avoid import errors in the playground runtime.
+- Forward the identity header to `ChatLiteLLM` as `default_headers` when not using DataRobot LLM Gateway so direct LLM calls preserve identity context.
+
+## 11.4.9
+- Updated `agent/AGENTS.md` and added root level `AGENTS.md` file with the instructions on how to implement/deploy agents using supported AI frameworks
+
+## 11.4.8
+- Make agent package flat
+- Configuration of the local development port of the agent is done via the AGENT_PORT instead of the AGENT_ENDPOINT environment variable
+- Add `agent/AGENTS.md` documentation describing how to customize and extend the default LangGraph agent
+- Introduce Pulumi LLM infrastructure options for both LLM Gateway–backed models and existing registered LLM deployments
+- Open source MCP server AF component
+- Move the Gdrive tools to the DR GEN AI library.
+- Upgrade drmcp dependency to include integration tools: Gdrive, Microsoft SharePoint, Jira and Confluence
+- Add Microsoft OAuth support
+
+## 11.4.7
 - Fix empty last name validation issue in user create for fastapi_server backend
 - Fix for Taskfile removed in derived repositories
 - Fix missing trailing slash for URL service links in terminal print for task dev
@@ -16,15 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed Chainlit ui
 - Switch root `task dev` to use shared `drdev` from `datarobot`
 - Added MCP configuration options to select specific tools
-- Make agent package flat
-- Configuration of the local development port of the agent is done via the AGENT_PORT instead of the AGENT_ENDPOINT environment variable
-- Add `agent/AGENTS.md` documentation describing how to customize and extend the default LangGraph agent
-- Introduce Pulumi LLM infrastructure options for both LLM Gateway–backed models and existing registered LLM deployments
-- Open source MCP server AF component
-- Move the Gdrive tools to the DR GEN AI library.
-- Upgrade drmcp dependency to include integration tools: Gdrive, Microsoft SharePoint, Jira and Confluence
-- Add Microsoft OAuth support
-- Updated `agent/AGENTS.md` and added root level `AGENTS.md` file with the instructions on how to implement/deploy agents using supported AI frameworks
 
 ## 11.4.6
 - Fix for task dev in codespaces

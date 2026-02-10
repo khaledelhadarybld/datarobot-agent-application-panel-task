@@ -450,7 +450,7 @@ function SidebarMenuItem({
     <li
       data-slot="sidebar-menu-item"
       data-sidebar="menu-item"
-      data-testid={testId}
+      test-id={testId}
       className={cn('group/menu-item relative', className)}
       {...props}
     />
@@ -503,7 +503,7 @@ function SidebarMenuButton({
       data-sidebar="menu-button"
       data-size={size}
       data-active={isActive}
-      data-testid={testId}
+      test-id={testId}
       className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
       {...props}
     />

@@ -257,6 +257,7 @@ http-client.private.env.json
 .pypirc
 
 node_modules/
+frontend_web/e2e/storageState.json
 
 /test_results/
 
@@ -277,3 +278,5 @@ Taskfile.gen.yaml
 # Agent environment files
 agent/uv.lock
 infra/uv.lock
+*/agentic_workflow/pyproject.toml
+*/agentic_workflow/uv.lock

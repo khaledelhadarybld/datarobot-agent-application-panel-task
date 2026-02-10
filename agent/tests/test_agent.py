@@ -12,3 +12,360 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+from unittest.mock import ANY, Mock, patch
+
+import pytest
+from langchain_core.prompts import ChatPromptTemplate
+
+from agent import MyAgent
+
+
+class TestMyAgentLangGraph:
+    @pytest.fixture
+    def agent(self) -> MyAgent:
+        return MyAgent(
+            api_key="test_key",
+            api_base="test_base",
+            verbose=True,
+            model="datarobot/azure/gpt-5-mini-2025-08-07",
+        )
+
+    def test_init_with_explicit_parameters(self):
+        """Test initialization with explicitly provided parameters."""
+        # Setup
+        api_key = "test-api-key"
+        api_base = "https://test-api-base.com"
+        model = "test-model"
+        verbose = True
+
+        # Execute
+        agent = MyAgent(
+            api_key=api_key, api_base=api_base, model=model, verbose=verbose
+        )
+
+        # Assert
+        assert agent.api_key == api_key
+        assert agent.api_base == api_base
+        assert agent.model == model
+        assert agent.verbose is True
+
+    @patch.dict(
+        os.environ,
+        {
+            "DATAROBOT_API_TOKEN": "env-api-key",
+            "DATAROBOT_ENDPOINT": "https://env-api-base.com",
+        },
+    )
+    def test_init_with_environment_variables(self):
+        """Test initialization using environment variables when no explicit parameters."""
+        # Execute
+        agent = MyAgent()
+
+        # Assert
+        assert agent.api_key == "env-api-key"
+        assert agent.api_base == "https://env-api-base.com"
+        assert agent.model is None
+        assert agent.verbose is True
+
+    @patch.dict(
+        os.environ,
+        {
+            "DATAROBOT_API_TOKEN": "env-api-key",
+            "DATAROBOT_ENDPOINT": "https://env-api-base.com",
+        },
+    )
+    def test_init_explicit_params_override_env_vars(self):
+        """Test explicit parameters override environment variables."""
+        # Setup
+        api_key = "explicit-api-key"
+        api_base = "https://explicit-api-base.com"
+
+        # Execute
+        agent = MyAgent(api_key=api_key, api_base=api_base)
+
+        # Assert
+        assert agent.api_key == "explicit-api-key"
+        assert agent.api_base == "https://explicit-api-base.com"
+
+    def test_init_with_string_verbose_true(self):
+        """Test initialization with string 'true' for verbose parameter."""
+        # Setup
+        verbose_values = ["true", "TRUE", "True"]
+
+        for verbose in verbose_values:
+            # Execute
+            agent = MyAgent(verbose=verbose)
+
+            # Assert
+            assert agent.verbose is True
+
+    def test_init_with_string_verbose_false(self):
+        """Test initialization with string 'false' for verbose parameter."""
+        # Setup
+        verbose_values = ["false", "FALSE", "False"]
+
+        for verbose in verbose_values:
+            # Execute
+            agent = MyAgent(verbose=verbose)
+
+            # Assert
+            assert agent.verbose is False
+
+    def test_init_with_boolean_verbose(self):
+        """Test initialization with boolean values for verbose parameter."""
+        # Test with True
+        agent = MyAgent(verbose=True)
+        assert agent.verbose is True
+
+        # Test with False
+        agent = MyAgent(verbose=False)
+        assert agent.verbose is False
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_init_with_additional_kwargs(self):
+        """Test initialization with additional keyword arguments."""
+        # Setup
+        additional_kwargs = {"extra_param1": "value1", "extra_param2": 42}
+
+        # Execute
+        agent = MyAgent(**additional_kwargs)
+
+        # Assert - Additional kwargs should be accepted but not stored as attributes
+        assert agent.api_key is None  # Should fallback to env var or None
+        assert agent.api_base == "https://app.datarobot.com"  # Default value
+        assert agent.model is None
+        assert agent.verbose is True
+
+        # Verify that the extra parameters don't create attributes
+        with pytest.raises(AttributeError):
+            _ = agent.extra_param1
+
+    @pytest.mark.parametrize(
+        "api_base,expected_result",
+        [
+            ("https://example.com", "https://example.com/"),
+            ("https://example.com/", "https://example.com/"),
+            ("https://example.com/api/v2", "https://example.com/"),
+            ("https://example.com/api/v2/", "https://example.com/"),
+            ("https://example.com/other-path", "https://example.com/other-path/"),
+            (
+                "https://custom.example.com:8080/path/to/api/v2/",
+                "https://custom.example.com:8080/path/to/",
+            ),
+            (
+                "https://example.com/api/v2/deployment/",
+                "https://example.com/api/v2/deployment/",
+            ),
+            (
+                "https://example.com/api/v2/deployment",
+                "https://example.com/api/v2/deployment/",
+            ),
+            (
+                "https://example.com/api/v2/genai/llmgw/chat/completions",
+                "https://example.com/api/v2/genai/llmgw/chat/completions",
+            ),
+            (
+                "https://example.com/api/v2/genai/llmgw/chat/completions/",
+                "https://example.com/api/v2/genai/llmgw/chat/completions",
+            ),
+            (None, "https://app.datarobot.com/"),
+        ],
+    )
+    @patch("agent.myagent.ChatLiteLLM")
+    def test_llm_gateway_with_api_base(self, mock_llm, api_base, expected_result):
+        """Test api_base_litellm property with various URL formats."""
+        with patch.dict(os.environ, {}, clear=True):
+            agent = MyAgent(
+                api_base=api_base, model="datarobot/azure/gpt-5-mini-2025-08-07"
+            )
+            agent.config.use_datarobot_llm_gateway = True
+            _ = agent.llm()
+            mock_llm.assert_called_once_with(
+                model="datarobot/azure/gpt-5-mini-2025-08-07",
+                api_base=expected_result,
+                api_key=None,
+                timeout=90,
+                streaming=True,
+                max_retries=3,
+            )
+
+    @pytest.mark.parametrize(
+        "api_base,expected_result",
+        [
+            (
+                "https://example.com",
+                "https://example.com/api/v2/deployments/test-id/chat/completions",
+            ),
+            (
+                "https://example.com/",
+                "https://example.com/api/v2/deployments/test-id/chat/completions",
+            ),
+            (
+                "https://example.com/api/v2/",
+                "https://example.com/api/v2/deployments/test-id/chat/completions",
+            ),
+            (
+                "https://example.com/api/v2",
+                "https://example.com/api/v2/deployments/test-id/chat/completions",
+            ),
+            (
+                "https://example.com/other-path",
+                "https://example.com/other-path/api/v2/deployments/test-id/chat/completions",
+            ),
+            (
+                "https://custom.example.com:8080/path/to",
+                "https://custom.example.com:8080/path/to/api/v2/deployments/test-id/chat/completions",
+            ),
+            (
+                "https://custom.example.com:8080/path/to/api/v2/",
+                "https://custom.example.com:8080/path/to/api/v2/deployments/test-id/chat/completions",
+            ),
+            (
+                "https://example.com/api/v2/deployments/",
+                "https://example.com/api/v2/deployments/",
+            ),
+            (
+                "https://example.com/api/v2/deployments",
+                "https://example.com/api/v2/deployments/",
+            ),
+            (
+                "https://example.com/api/v2/genai/llmgw/chat/completions",
+                "https://example.com/api/v2/genai/llmgw/chat/completions",
+            ),
+            (
+                "https://example.com/api/v2/genai/llmgw/chat/completions/",
+                "https://example.com/api/v2/genai/llmgw/chat/completions",
+            ),
+            (
+                None,
+                "https://app.datarobot.com/api/v2/deployments/test-id/chat/completions",
+            ),
+        ],
+    )
+    @patch("agent.myagent.ChatLiteLLM")
+    def test_llm_deployment_with_api_base(self, mock_llm, api_base, expected_result):
+        """Test api_base_litellm property with various URL formats."""
+        with patch.dict(os.environ, {"LLM_DEPLOYMENT_ID": "test-id"}, clear=True):
+            agent = MyAgent(api_base=api_base)
+            agent.config.llm_default_model = "datarobot/azure/gpt-5-mini-2025-08-07"
+            _ = agent.llm()
+            mock_llm.assert_called_once_with(
+                model="datarobot/azure/gpt-5-mini-2025-08-07",
+                api_base=expected_result,
+                api_key=None,
+                timeout=90,
+                streaming=True,
+                max_retries=3,
+            )
+
+    @patch("agent.myagent.ChatLiteLLM")
+    def test_llm(self, mock_llm, agent):
+        # Test that ChatLiteLLM is created with correct parameters
+        agent.llm()
+        mock_llm.assert_called_once_with(
+            model="datarobot/azure/gpt-5-mini-2025-08-07",
+            api_base="test_base/",
+            api_key="test_key",
+            timeout=90,
+            streaming=True,
+            max_retries=3,
+        )
+
+    @patch("agent.myagent.ChatLiteLLM")
+    def test_llm_property_with_no_api_base(self, mock_llm, agent):
+        # Test that ChatLiteLLM is created with correct parameters
+        with patch.dict(os.environ, {}, clear=True):
+            agent = MyAgent(
+                api_key="test_key",
+                verbose=True,
+                model="datarobot/azure/gpt-5-mini-2025-08-07",
+            )
+            agent.llm()
+            mock_llm.assert_called_once_with(
+                model="datarobot/azure/gpt-5-mini-2025-08-07",
+                api_base="https://app.datarobot.com/",
+                api_key="test_key",
+                timeout=90,
+                streaming=True,
+                max_retries=3,
+            )
+
+    @patch("agent.myagent.ChatLiteLLM")
+    @pytest.mark.parametrize("use_datarobot_llm_gateway", [True, False])
+    def test_llm_with_identity_token(self, mock_llm, use_datarobot_llm_gateway):
+        with patch.dict(os.environ, {"LLM_DEPLOYMENT_ID": "test-id"}, clear=True):
+            agent = MyAgent(
+                api_key="test_key",
+                verbose=True,
+                model="datarobot/azure/gpt-5-mini-2025-08-07",
+                forwarded_headers={
+                    "x-datarobot-api-key": "abc",
+                    "x-datarobot-identity-token": "xyz",
+                },
+            )
+            agent.config.use_datarobot_llm_gateway = use_datarobot_llm_gateway
+            agent.llm()
+
+            if use_datarobot_llm_gateway:
+                mock_llm.assert_called_once_with(
+                    model="datarobot/azure/gpt-5-mini-2025-08-07",
+                    api_base="https://app.datarobot.com/api/v2/deployments/test-id/chat/completions",
+                    api_key="test_key",
+                    timeout=90,
+                    streaming=True,
+                    max_retries=3,
+                )
+            else:
+                mock_llm.assert_called_once_with(
+                    model="datarobot/azure/gpt-5-mini-2025-08-07",
+                    api_base="https://app.datarobot.com/api/v2/deployments/test-id/chat/completions",
+                    api_key="test_key",
+                    timeout=90,
+                    streaming=True,
+                    max_retries=3,
+                    default_headers={"X-DataRobot-Identity-Token": "xyz"},
+                )
+
+    @patch("agent.myagent.create_react_agent")
+    def test_agent_planner_property(self, mock_create_agent, agent):
+        """Test that agent_planner creates a react agent."""
+        mock_llm = Mock()
+        with patch.object(MyAgent, "llm", return_value=mock_llm):
+            _ = agent.agent_planner
+            mock_create_agent.assert_called_once_with(
+                mock_llm,
+                tools=ANY,
+                prompt=ANY,
+                name="Planner Agent",
+            )
+
+    @patch("agent.myagent.create_react_agent")
+    def test_agent_writer_property(self, mock_create_agent, agent):
+        """Test that agent_writer creates a react agent."""
+        mock_llm = Mock()
+        with patch.object(MyAgent, "llm", return_value=mock_llm):
+            _ = agent.agent_writer
+            mock_create_agent.assert_called_once_with(
+                mock_llm,
+                tools=ANY,
+                prompt=ANY,
+                name="Writer Agent",
+            )
+
+    def test_workflow_property(self, agent):
+        """Test that workflow returns a StateGraph with correct structure."""
+        mock_llm = Mock()
+        with patch.object(MyAgent, "llm", return_value=mock_llm):
+            with patch("agent.myagent.create_react_agent"):
+                workflow = agent.workflow
+                # Verify it's a StateGraph (basic check)
+                assert workflow is not None
+                assert "planner_node" in workflow.nodes
+                assert "writer_node" in workflow.nodes
+
+    def test_prompt_template_property(self, agent):
+        """Test that prompt_template returns a ChatPromptTemplate."""
+        template = agent.prompt_template
+        assert template is not None
+        assert isinstance(template, ChatPromptTemplate)

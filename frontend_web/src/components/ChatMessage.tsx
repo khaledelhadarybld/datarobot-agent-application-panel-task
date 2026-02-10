@@ -197,7 +197,7 @@ function ChatMessageContent({
       data-message-id={id}
       data-thread-id={threadId}
       data-resource-id={resourceId}
-      data-testid={`${type}-${role}-message-${id}`}
+      test-id={`${type}-${role}-message-${id}`}
     >
       <div className="flex-shrink-0">
         <div
