@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve `MyAgent` initialization to fall back to the configured default model when the provided model is `"unknown"` or `"datarobot-deployed-llm"`, avoiding invalid model selection.
 - Pin `anyio` and `packaging` to avoid import errors in the playground runtime.
 - Forward the identity header to `ChatLiteLLM` as `default_headers` when not using DataRobot LLM Gateway so direct LLM calls preserve identity context.
+- Use model "unknown" in the request when running the agent
 
 ## 11.4.9
 - Updated `agent/AGENTS.md` and added root level `AGENTS.md` file with the instructions on how to implement/deploy agents using supported AI frameworks
