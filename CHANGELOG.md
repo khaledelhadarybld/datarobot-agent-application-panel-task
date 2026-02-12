@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 11.5.1
+- Use model "unknown" in the request when running the agent
+
 ## 11.5.0
 - Remove `preferred_model` argument from `MyAgent.llm` method
 - Lower `datarobot-drum` version upper limit to avoid `asyncio` errors in the playground

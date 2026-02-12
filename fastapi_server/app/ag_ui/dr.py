@@ -244,6 +244,6 @@ class DataRobotAGUIAgent(AGUIAgent):
             )
         return {
             "messages": messages,
-            "model": "datarobot/azure/gpt-5-mini-2025-08-07",
+            "model": "unknown",
             "stream": True,
         }
