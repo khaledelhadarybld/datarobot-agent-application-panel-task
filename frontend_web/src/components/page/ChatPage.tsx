@@ -33,7 +33,7 @@ const initialMessages: MessageResponse[] = [
       parts: [
         {
           type: 'text',
-          text: `Hi! I'm a topic research agent; ask me to research any topic that's on your mind.`,
+          text: `Hello!`,
         },
       ],
     },

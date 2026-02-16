@@ -327,7 +327,7 @@ class TestMyAgentLangGraph:
                     default_headers={"X-DataRobot-Identity-Token": "xyz"},
                 )
 
-    @patch("agent.myagent.create_react_agent")
+    @patch("agent.myagent.create_agent")
     def test_agent_planner_property(self, mock_create_agent, agent):
         """Test that agent_planner creates a react agent."""
         mock_llm = Mock()
@@ -336,11 +336,11 @@ class TestMyAgentLangGraph:
             mock_create_agent.assert_called_once_with(
                 mock_llm,
                 tools=ANY,
-                prompt=ANY,
+                system_prompt=ANY,
                 name="Planner Agent",
             )
 
-    @patch("agent.myagent.create_react_agent")
+    @patch("agent.myagent.create_agent")
     def test_agent_writer_property(self, mock_create_agent, agent):
         """Test that agent_writer creates a react agent."""
         mock_llm = Mock()
@@ -349,7 +349,7 @@ class TestMyAgentLangGraph:
             mock_create_agent.assert_called_once_with(
                 mock_llm,
                 tools=ANY,
-                prompt=ANY,
+                system_prompt=ANY,
                 name="Writer Agent",
             )
 
@@ -357,7 +357,7 @@ class TestMyAgentLangGraph:
         """Test that workflow returns a StateGraph with correct structure."""
         mock_llm = Mock()
         with patch.object(MyAgent, "llm", return_value=mock_llm):
-            with patch("agent.myagent.create_react_agent"):
+            with patch("agent.myagent.create_agent"):
                 workflow = agent.workflow
                 # Verify it's a StateGraph (basic check)
                 assert workflow is not None

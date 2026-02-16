@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 11.6.0
+- Pin `pyarrow==20.0.0` to avoid error in codespaces
+- Added support for alternative OAuth flow using Authlib
+- NAT 1.4, Langgraph 1.x, and llamaindex 0.14.x
+- New env var ENABLE_AGENT_HA_MODE to configure DRUM runtime params for agent custom model deployment HA concurrency with defaults
+
 ## 11.5.1
 - Use model "unknown" in the request when running the agent
 

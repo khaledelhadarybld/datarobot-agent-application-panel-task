@@ -42,6 +42,7 @@ AUTH_SESS_KEY: Final[str] = "auth"
 AUTH_CTX_HEADER: Final[str] = "X-DataRobot-Authorization-Context"
 VISITOR_SCOPED_API_KEY_HEADER: Final[str] = "X-DATAROBOT-API-KEY"
 DEFAULT_JWT_ALGORITHM: Final[str] = "HS256"
+DATAROBOT_IDENTITY_HEADER_NAME: Final[str] = "X-DataRobot-Identity-Token"
 
 
 logger = logging.getLogger(name=__name__)
@@ -322,5 +323,8 @@ def get_agent_headers(
 
     if api_key := request.headers.get(VISITOR_SCOPED_API_KEY_HEADER):
         headers[VISITOR_SCOPED_API_KEY_HEADER] = api_key
+
+    if identity_token := request.headers.get(DATAROBOT_IDENTITY_HEADER_NAME):
+        headers[DATAROBOT_IDENTITY_HEADER_NAME] = identity_token
 
     return headers

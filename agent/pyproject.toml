@@ -5,8 +5,8 @@ description = "Implementation of agent"
 readme = "README.md"
 requires-python = ">=3.10, <3.13"
 dependencies = [
-    "datarobot-genai[langgraph]>=0.3.10,<0.4.0",
-    "datarobot-moderations>=11.2.10,<11.3.0",
+    "datarobot-genai[langgraph]>=0.3.11,<0.4.0",
+    "datarobot-moderations==11.2.14",
     "datarobot-drum>=1.17.5,<1.17.12",  # Lift upper limit after asyncio migration finished
     "datarobot-mlops>=11.1.0",
     "openai>=1.81.0,<2.0.0",
@@ -180,6 +180,7 @@ override-dependencies = [
     "fastapi>=0.118.2,<0.122.0",
     "ragas>=0.3.8",
     "starlette>=0.49.1",
+    "pyarrow==21.0.0",
 ]
 package = true
 

@@ -20,6 +20,8 @@ import pulumi_datarobot as datarobot
 from datarobot_pulumi_utils.pulumi import export
 from datarobot_pulumi_utils.pulumi.stack import PROJECT_NAME
 
+OAUTH_IMPL: Final[str] = "OAUTH_IMPL"
+
 # these configs are expected in the web application
 DATAROBOT_OAUTH_PROVIDERS: Final[str] = "DATAROBOT_OAUTH_PROVIDERS"
 GOOGLE_CLIENT_ID: Final[str] = "GOOGLE_CLIENT_ID"
@@ -36,7 +38,13 @@ box_client_secret = os.environ.get(BOX_CLIENT_SECRET)
 microsoft_client_id = os.environ.get(MICROSOFT_CLIENT_ID)
 microsoft_client_secret = os.environ.get(MICROSOFT_CLIENT_SECRET)
 
-app_runtime_parameters = []
+app_runtime_parameters = [
+    datarobot.ApplicationSourceRuntimeParameterValueArgs(
+        type="string",
+        key=OAUTH_IMPL,
+        value="datarobot",
+    )
+]
 
 # DataRobot OAuth Providers Service
 provider_ids: list[pulumi.Output[str]] = []

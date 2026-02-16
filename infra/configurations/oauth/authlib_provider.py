@@ -12,101 +12,82 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from dataclasses import dataclass
 from typing import Final
 
 import pulumi
 import pulumi_datarobot as datarobot
 from datarobot_pulumi_utils.pulumi.stack import PROJECT_NAME
 
-# these configs are expected in the web application
-GOOGLE_CLIENT_ID: Final[str] = "GOOGLE_CLIENT_ID"
-GOOGLE_CLIENT_SECRET: Final[str] = "GOOGLE_CLIENT_SECRET"
-BOX_CLIENT_ID: Final[str] = "BOX_CLIENT_ID"
-BOX_CLIENT_SECRET: Final[str] = "BOX_CLIENT_SECRET"
-MICROSOFT_CLIENT_ID: Final[str] = "MICROSOFT_CLIENT_ID"
-MICROSOFT_CLIENT_SECRET: Final[str] = "MICROSOFT_CLIENT_SECRET"
+OAUTH_IMPL: Final[str] = "OAUTH_IMPL"
 
-google_client_id = os.environ.get(GOOGLE_CLIENT_ID)
-google_client_secret = os.environ.get(GOOGLE_CLIENT_SECRET)
-box_client_id = os.environ.get(BOX_CLIENT_ID)
-box_client_secret = os.environ.get(BOX_CLIENT_SECRET)
-microsoft_client_id = os.environ.get(MICROSOFT_CLIENT_ID)
-microsoft_client_secret = os.environ.get(MICROSOFT_CLIENT_SECRET)
-
-app_runtime_parameters = []
-
-if google_client_id and google_client_secret:
-    pulumi.info(
-        "Google OAuth credentials found, adding to application runtime parameters."
+app_runtime_parameters = [
+    datarobot.ApplicationSourceRuntimeParameterValueArgs(
+        type="string",
+        key=OAUTH_IMPL,
+        value="authlib",
     )
-    pulumi.export("Google Client ID", google_client_id)
+]
 
-    google_client_secret_cred = datarobot.ApiTokenCredential(
-        f"[{PROJECT_NAME}] Agent Application Google Client",
-        args=datarobot.ApiTokenCredentialArgs(
-            api_token=str(google_client_secret),
-        ),
-    )
 
-    app_runtime_parameters += [
-        datarobot.ApplicationSourceRuntimeParameterValueArgs(
-            type="string",
-            key=GOOGLE_CLIENT_ID,
-            value=google_client_id,
-        ),
-        datarobot.ApplicationSourceRuntimeParameterValueArgs(
-            type="credential",
-            key=GOOGLE_CLIENT_SECRET,
-            value=google_client_secret_cred.id,
-        ),
-    ]
+@dataclass(frozen=True)
+class ProviderConfig:
+    """OAuth provider configuration."""
 
-if box_client_id and box_client_secret:
-    pulumi.info("Box credentials found, adding to application runtime parameters.")
-    pulumi.export("Box Client ID", box_client_id)
+    name: str
+    client_id_key: str
+    client_secret_key: str
 
-    box_client_secret_cred = datarobot.ApiTokenCredential(
-        f"[{PROJECT_NAME}] Agent Application Box Client",
-        args=datarobot.ApiTokenCredentialArgs(
-            api_token=str(box_client_secret),
-        ),
-    )
 
-    app_runtime_parameters += [
-        datarobot.ApplicationSourceRuntimeParameterValueArgs(
-            type="string",
-            key=BOX_CLIENT_ID,
-            value=box_client_id,
-        ),
-        datarobot.ApplicationSourceRuntimeParameterValueArgs(
-            type="credential",
-            key=BOX_CLIENT_SECRET,
-            value=box_client_secret_cred.id,
-        ),
-    ]
+AUTHLIB_OAUTH_PROVIDERS = [
+    ProviderConfig(
+        name="Google",
+        client_id_key="GOOGLE_CLIENT_ID",
+        client_secret_key="GOOGLE_CLIENT_SECRET",
+    ),
+    ProviderConfig(
+        name="Box", client_id_key="BOX_CLIENT_ID", client_secret_key="BOX_CLIENT_SECRET"
+    ),
+    ProviderConfig(
+        name="Microsoft",
+        client_id_key="MICROSOFT_CLIENT_ID",
+        client_secret_key="MICROSOFT_CLIENT_SECRET",
+    ),
+]
 
-if microsoft_client_id and microsoft_client_secret:
-    pulumi.info(
-        "Microsoft credentials found, adding to application runtime parameters."
-    )
-    pulumi.export("Microsoft Client ID", microsoft_client_id)
 
-    microsoft_client_secret_cred = datarobot.ApiTokenCredential(
-        f"[{PROJECT_NAME}] Agent Application Microsoft Client",
-        args=datarobot.ApiTokenCredentialArgs(
-            api_token=str(microsoft_client_secret),
-        ),
-    )
+def add_oauth_provider(provider: ProviderConfig, parameters: list) -> None:
+    client_id = os.environ.get(provider.client_id_key)
+    client_secret = os.environ.get(provider.client_secret_key)
 
-    app_runtime_parameters += [
-        datarobot.ApplicationSourceRuntimeParameterValueArgs(
-            type="string",
-            key=MICROSOFT_CLIENT_ID,
-            value=microsoft_client_id,
-        ),
-        datarobot.ApplicationSourceRuntimeParameterValueArgs(
-            type="credential",
-            key=MICROSOFT_CLIENT_SECRET,
-            value=microsoft_client_secret_cred.id,
-        ),
-    ]
+    if client_id and client_secret:
+        pulumi.info(
+            f"{provider.name} OAuth credentials found, adding to application runtime parameters."
+        )
+        pulumi.export(f"{provider.name} Client ID", client_id)
+
+        client_secret_cred = datarobot.ApiTokenCredential(
+            f"[{PROJECT_NAME}] Agent Application {provider.name} Client",
+            args=datarobot.ApiTokenCredentialArgs(
+                api_token=str(client_secret),
+            ),
+        )
+
+        parameters.extend(
+            [
+                datarobot.ApplicationSourceRuntimeParameterValueArgs(
+                    type="string",
+                    key=provider.client_id_key,
+                    value=client_id,
+                ),
+                datarobot.ApplicationSourceRuntimeParameterValueArgs(
+                    type="credential",
+                    key=provider.client_secret_key,
+                    value=client_secret_cred.id,
+                ),
+            ]
+        )
+
+
+for provider in AUTHLIB_OAUTH_PROVIDERS:
+    add_oauth_provider(provider, app_runtime_parameters)

@@ -45,6 +45,7 @@ from httpx_sse import connect_sse
 
 from app.auth.ctx import (
     AUTH_CTX_HEADER,
+    DATAROBOT_IDENTITY_HEADER_NAME,
     VISITOR_SCOPED_API_KEY_HEADER,
     get_agent_headers,
     get_auth_ctx_header,
@@ -387,27 +388,35 @@ def test_get_auth_ctx_header_with_custom_algorithm(
     assert decoded["user"]["id"] == sample_auth_ctx.user.id
 
 
-def test_get_agent_headers_with_api_key(
+def test_get_agent_headers_with_api_key_and_identity_token(
     sample_auth_ctx: AuthCtx[Metadata], session_secret_key: str
 ) -> None:
-    """Test get_agent_headers includes both auth context and visitor API key headers when API key is present."""
+    """Test get_agent_headers includes auth context, visitor API key and identity token headers when present."""
 
     api_key_value = "my-api-key"
+    identity_token = "my-identity_token"
     request = Request(
         {
             "type": "http",
-            "headers": [(b"x-datarobot-api-key", api_key_value.encode())],
+            "headers": [
+                (b"x-datarobot-api-key", api_key_value.encode()),
+                (b"x-datarobot-identity-token", identity_token.encode()),
+            ],
         }
     )
 
     headers = get_agent_headers(request, sample_auth_ctx, session_secret_key)
 
     assert AUTH_CTX_HEADER in headers, "Authorization context header missing"
+
     assert VISITOR_SCOPED_API_KEY_HEADER in headers, "API key header missing"
     assert headers[VISITOR_SCOPED_API_KEY_HEADER] == api_key_value
 
+    assert DATAROBOT_IDENTITY_HEADER_NAME in headers, "Identity token header missing"
+    assert headers[DATAROBOT_IDENTITY_HEADER_NAME] == identity_token
 
-def test_get_agent_headers_without_api_key(
+
+def test_get_agent_headers_without_headers(
     sample_auth_ctx: AuthCtx[Metadata], session_secret_key: str
 ) -> None:
     """Test get_agent_headers returns only auth context header when API key is absent."""
@@ -418,6 +427,7 @@ def test_get_agent_headers_without_api_key(
 
     assert AUTH_CTX_HEADER in headers
     assert VISITOR_SCOPED_API_KEY_HEADER not in headers
+    assert DATAROBOT_IDENTITY_HEADER_NAME not in headers
     assert len(headers) == 1, "Unexpected extra headers returned"
 
 

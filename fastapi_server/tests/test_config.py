@@ -18,6 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from app import Config
+from app.auth.oauth import OAuthImpl
 
 
 def test__config__load_env_vars() -> None:
@@ -79,3 +80,22 @@ def test__config__application_endpoint(endpoint: str) -> None:
             config.application_endpoint
             == "https://api.test.datarobot.com/custom_applications/6978ed7637491dea39936243/api/v1"
         )
+
+
+@pytest.mark.parametrize(
+    "oauth_impl,expected_impl",
+    [
+        ("authlib", OAuthImpl.AUTHLIB),
+        ("datarobot", OAuthImpl.DATAROBOT),
+    ],
+)
+def test__config__oauth_impl(oauth_impl: str, expected_impl: OAuthImpl) -> None:
+    base_env = dict(
+        MLOPS_RUNTIME_PARAM_SESSION_SECRET_KEY='{"type":"credential","payload":{"credentialType":"api_token","apiToken":"test-key"}}',
+        DATAROBOT_ENDPOINT="https://api.test.datarobot.com",
+        DATAROBOT_API_TOKEN="test-token",
+        OAUTH_IMPL=oauth_impl,
+    )
+
+    with patch.dict(os.environ, base_env, clear=True):
+        assert Config().oauth_impl == expected_impl
