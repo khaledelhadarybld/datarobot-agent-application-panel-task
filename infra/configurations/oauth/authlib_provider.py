@@ -46,7 +46,9 @@ AUTHLIB_OAUTH_PROVIDERS = [
         client_secret_key="GOOGLE_CLIENT_SECRET",
     ),
     ProviderConfig(
-        name="Box", client_id_key="BOX_CLIENT_ID", client_secret_key="BOX_CLIENT_SECRET"
+        name="Box",
+        client_id_key="BOX_CLIENT_ID",
+        client_secret_key="BOX_CLIENT_SECRET",
     ),
     ProviderConfig(
         name="Microsoft",
@@ -67,7 +69,7 @@ def add_oauth_provider(provider: ProviderConfig, parameters: list) -> None:
         pulumi.export(f"{provider.name} Client ID", client_id)
 
         client_secret_cred = datarobot.ApiTokenCredential(
-            f"[{PROJECT_NAME}] Agent Application {provider.name} Client",
+            f"[{PROJECT_NAME}] Agentic Starter Application Template {provider.name} Client",
             args=datarobot.ApiTokenCredentialArgs(
                 api_token=str(client_secret),
             ),

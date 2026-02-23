@@ -29,17 +29,21 @@ export function Chat({ initialMessages, children }: ChatProps) {
   }, []);
 
   return (
-    <div className="main-section">
+    <div className="flex flex-col h-full gap-4 p-4 overflow-hidden w-full">
       {children || (
         <>
-          <ChatMessages isLoading={isLoadingHistory} messages={combinedEvents} chatId={chatId} />
-          <ChatProgress progress={progress || {}} deleteProgress={deleteProgress} />
-          <ChatTextInput
-            userInput={userInput}
-            setUserInput={setUserInput}
-            onSubmit={sendMessage}
-            runningAgent={isAgentRunning}
-          />
+          <div className="flex flex-col grow gap-2 min-h-0 overflow-hidden">
+            <ChatMessages isLoading={isLoadingHistory} messages={combinedEvents} chatId={chatId} />
+            <ChatProgress progress={progress || {}} deleteProgress={deleteProgress} />
+          </div>
+          <div className="shrink-0">
+            <ChatTextInput
+              userInput={userInput}
+              setUserInput={setUserInput}
+              onSubmit={sendMessage}
+              runningAgent={isAgentRunning}
+            />
+          </div>
         </>
       )}
     </div>

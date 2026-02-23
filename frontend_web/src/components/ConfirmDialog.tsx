@@ -45,7 +45,7 @@ export const ConfirmDialogModal = ({
             Cancel
           </Button>
           <Button
-            test-id="modal-confirm"
+            testId="modal-confirm"
             onClick={() => {
               onSuccess();
               setOpen(false);

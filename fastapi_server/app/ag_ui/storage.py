@@ -44,6 +44,7 @@ from ag_ui.core import (
 
 from app.ag_ui.base import AGUIAgent
 from app.ag_ui.error_codes import ErrorCodes
+from app.ag_ui.translate import translate_messages
 from app.chats import Chat, ChatCreate, ChatRepository
 from app.messages import (
     Message,
@@ -179,6 +180,13 @@ class AGUIAgentWithStorage(AGUIAgent):
                         in_progress=False,
                     )
                 )
+
+        # After persisting any new user messages, rebuild the RunAgentInput messages
+        # from the full stored chat so downstream agents receive conversation history.
+        existing_messages = await self._message_repo.get_chat_messages(
+            existing_chat.uuid
+        )
+        input.messages = list(translate_messages(existing_messages))  # type: ignore[arg-type]
 
         state = StorageStateMachineState()
 

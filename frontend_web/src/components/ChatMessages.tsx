@@ -50,31 +50,37 @@ export function ChatMessages({ children, messages, isLoading, chatId }: ChatMess
   }, [messages]);
 
   return (
-    <div className="messages gap-2" ref={scrollContainerRef} onScroll={onChatScroll}>
-      {isLoading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-        </div>
-      ) : (
-        children ||
-        (messages &&
-          messages.map(m => {
-            if (isErrorStateEvent(m)) {
-              return <ChatError key={m.value.id} {...m.value} />;
-            }
-            if (isMessageStateEvent(m)) {
-              return <ChatMessagesMemo key={m.value.id} {...m.value} />;
-            }
-            if (isStepStateEvent(m)) {
-              return <StepEvent key={m.value.id} {...m.value} />;
-            }
-            if (isThinkingEvent(m)) {
-              return <ThinkingEvent key={m.type} />;
-            }
-          }))
-      )}
+    <div
+      className="flex-1 min-h-0 overflow-y-auto"
+      ref={scrollContainerRef}
+      onScroll={onChatScroll}
+    >
+      <div className="flex flex-col gap-2 px-2">
+        {isLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+        ) : (
+          children ||
+          (messages &&
+            messages.map(m => {
+              if (isErrorStateEvent(m)) {
+                return <ChatError key={m.value.id} {...m.value} />;
+              }
+              if (isMessageStateEvent(m)) {
+                return <ChatMessagesMemo key={m.value.id} {...m.value} />;
+              }
+              if (isStepStateEvent(m)) {
+                return <StepEvent key={m.value.id} {...m.value} />;
+              }
+              if (isThinkingEvent(m)) {
+                return <ThinkingEvent key={m.type} />;
+              }
+            }))
+        )}
+      </div>
     </div>
   );
 }

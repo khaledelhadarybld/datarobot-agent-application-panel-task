@@ -24,7 +24,7 @@ from datarobot.core.config import DataRobotAppFrameworkBaseSettings
 from pydantic import Field, model_validator
 
 
-class Config(DataRobotAppFrameworkBaseSettings):
+class Config(DataRobotAppFrameworkBaseSettings):  # type: ignore[misc]
     """
     This class finds variables in the priority order of: env
     variables (including Runtime Parameters), .env, file_secrets, then
@@ -36,6 +36,7 @@ class Config(DataRobotAppFrameworkBaseSettings):
     use_datarobot_llm_gateway: bool = False
     mcp_deployment_id: str | None = None
     external_mcp_url: str | None = None
+    memory_space_id: str | None = None
 
     local_dev_port: int = Field(
         default=8842, validation_alias="AGENT_PORT", ge=1, le=65535

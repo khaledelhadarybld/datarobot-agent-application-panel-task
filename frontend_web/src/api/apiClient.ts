@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-import { getApiUrl } from '@/lib/utils';
+import { getApiUrl } from '@/lib/url-utils';
 
 const baseApiUrl = getApiUrl();
 

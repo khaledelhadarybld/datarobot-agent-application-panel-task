@@ -46,7 +46,7 @@ export function ChatTextInput({
   }
 
   return (
-    <div className="chat-text-input relative">
+    <div className="relative shrink-0">
       <Textarea
         ref={ref}
         value={userInput}
@@ -54,7 +54,7 @@ export function ChatTextInput({
         onCompositionStart={() => setIsComposing(true)}
         onCompositionEnd={() => setIsComposing(false)}
         onKeyDown={keyDownHandler}
-        className="pr-12 text-area"
+        className="pr-12 flex-1 shrink-0 overflow-y-auto overflow-x-hidden h-auto min-h-20 resize-none"
       ></Textarea>
       {runningAgent ? (
         <Tooltip>

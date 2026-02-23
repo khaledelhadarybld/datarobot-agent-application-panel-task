@@ -66,7 +66,7 @@ export function CodeBlock({ code, className }: CodeBlockProps) {
       </div>
       <pre
         className={cn(
-          'px-3 py-2 text-xs overflow-x-auto bg-transparent border-0 m-0 rounded-none',
+          'code px-3 py-2 overflow-x-auto bg-transparent border-0 m-0 rounded-none',
           className
         )}
       >
@@ -75,7 +75,7 @@ export function CodeBlock({ code, className }: CodeBlockProps) {
       {isCollapsible && !isExpanded && (
         <button
           onClick={() => setIsExpanded(true)}
-          className="w-full text-xs text-muted-foreground hover:text-foreground py-1 px-3 text-left border-t border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+          className="caption-01 w-full hover:text-foreground py-1 px-3 text-left border-t border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
         >
           ... {lineCount - COLLAPSED_LINES} more lines (click to expand)
         </button>

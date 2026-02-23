@@ -66,7 +66,8 @@ export function ChatSidebar({
     <Sidebar className="sidebar">
       <SidebarContent>
         <SidebarGroup>
-          <SidebarMenuItem key="open-settings">
+          {/* <div className="flex items-center justify-between px-2 py-1"> */}
+          <SidebarMenuItem key="open-settings" className="flex-1">
             <SidebarMenuButton disabled={isLoading} asChild onClick={goToSettings}>
               <div>
                 <Settings />
@@ -74,7 +75,6 @@ export function ChatSidebar({
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarGroupLabel>Chats</SidebarGroupLabel>
           <SidebarMenuItem key="new-chat">
             <SidebarMenuButton
               disabled={isLoading}
@@ -88,6 +88,9 @@ export function ChatSidebar({
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
+
+          {/* </div> */}
+          <SidebarGroupLabel>Chats</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu id="sidebar-chats">
               {isLoading ? (

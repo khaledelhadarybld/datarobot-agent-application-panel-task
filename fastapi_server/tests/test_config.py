@@ -99,3 +99,25 @@ def test__config__oauth_impl(oauth_impl: str, expected_impl: OAuthImpl) -> None:
 
     with patch.dict(os.environ, base_env, clear=True):
         assert Config().oauth_impl == expected_impl
+
+
+@pytest.mark.parametrize(
+    "oauth_provider,expected_impl",
+    [
+        ("authlib_provider.py", OAuthImpl.AUTHLIB),
+        ("datarobot_provider.py", OAuthImpl.DATAROBOT),
+        ("", OAuthImpl.DATAROBOT),  # default to datarobot
+    ],
+)
+def test__config__oauth_provider_fallback(
+    oauth_provider: str, expected_impl: OAuthImpl
+) -> None:
+    base_env = dict(
+        MLOPS_RUNTIME_PARAM_SESSION_SECRET_KEY='{"type":"credential","payload":{"credentialType":"api_token","apiToken":"test-key"}}',
+        DATAROBOT_ENDPOINT="https://api.test.datarobot.com",
+        DATAROBOT_API_TOKEN="test-token",
+        INFRA_ENABLE_OAUTH=oauth_provider,
+    )
+
+    with patch.dict(os.environ, base_env, clear=True):
+        assert Config().oauth_impl == expected_impl

@@ -21,16 +21,19 @@ import './App.css';
 import { App } from './App.tsx';
 import { queryClient } from '@/lib/query-client';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { getBaseUrl } from '@/lib/utils.ts';
+import { getBaseUrl } from '@/lib/url-utils';
+import { ThemeProvider } from '@/theme/theme-provider';
 
 const basename = getBaseUrl();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <Router basename={basename}>
-        <App />
-      </Router>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <Router basename={basename}>
+          <App />
+        </Router>
+      </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>
 );

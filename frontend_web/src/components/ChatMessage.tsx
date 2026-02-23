@@ -56,11 +56,11 @@ class ChatMessageErrorBoundary extends Component<
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-medium text-destructive">Failed to render message</span>
+              <span className="mn-label text-destructive">Failed to render message</span>
             </div>
             <CodeBlock code={JSON.stringify(this.props.message, null, 2)} />
             {this.state.error && (
-              <div className="text-xs text-muted-foreground my-2">
+              <div className="caption-01 my-2">
                 <div>{this.state.error.message}</div>
                 <div>{this.state.error.stack}</div>
               </div>
@@ -90,7 +90,7 @@ const MarkdownBlock = memo(({ block, index }: { block: string; index: number }) 
   if (block.startsWith('```markdown')) {
     const inner = block.replace(MarkdownRegExp, '');
     return (
-      <div key={index} className="markdown-block">
+      <div key={index} className="rounded-lg p-2 overflow-auto">
         <ReactMarkdown>{inner}</ReactMarkdown>
       </div>
     );
@@ -135,8 +135,8 @@ export function ToolInvocationPart({ part }: { part: ToolInvocationUIPart }) {
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 dark:bg-muted/20 border-b border-border">
         <Wrench className="w-4 h-4 text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">Tool Call</span>
-        <Badge variant="secondary" className="font-mono text-xs">
+        <span className="body-secondary">Tool Call</span>
+        <Badge variant="default" className="code">
           {toolInvocation.toolName}
         </Badge>
         {hasResult ? (
@@ -149,7 +149,7 @@ export function ToolInvocationPart({ part }: { part: ToolInvocationUIPart }) {
       {/* Arguments Section */}
       {toolInvocation.args && (
         <div className="border-b border-border last:border-b-0">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground bg-muted/20">
+          <div className="caption-01 flex items-center gap-1.5 px-3 py-1.5 bg-muted/20">
             <ChevronRight className="w-3 h-3" />
             Arguments
           </div>
@@ -160,7 +160,7 @@ export function ToolInvocationPart({ part }: { part: ToolInvocationUIPart }) {
       {/* Result Section */}
       {toolInvocation.result && (
         <div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground bg-muted/20">
+          <div className="caption-01 flex items-center gap-1.5 px-3 py-1.5 bg-muted/20">
             <ChevronRight className="w-3 h-3" />
             Result
           </div>
@@ -197,7 +197,7 @@ function ChatMessageContent({
       data-message-id={id}
       data-thread-id={threadId}
       data-resource-id={resourceId}
-      test-id={`${type}-${role}-message-${id}`}
+      data-testid={`${type}-${role}-message-${id}`}
     >
       <div className="flex-shrink-0">
         <div
@@ -215,9 +215,9 @@ function ChatMessageContent({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-sm font-medium capitalize">{role}</span>
+          <span className="mn-label capitalize">{role}</span>
         </div>
-        <div className="text-sm whitespace-pre-wrap break-words content">
+        <div className="body whitespace-pre-wrap break-words text-wrap [line-break:anywhere]">
           {content.parts.map((part, i) => (
             <UniversalContentPart key={i} part={part} />
           ))}

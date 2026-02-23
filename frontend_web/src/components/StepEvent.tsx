@@ -29,12 +29,10 @@ export function StepEvent({ id, name, createdAt, isRunning, threadId }: StepEven
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-sm font-medium">{name}</span>
-          <span className="text-xs text-muted-foreground">{date.toLocaleTimeString()}</span>
+          <span className="mn-label">{name}</span>
+          <span className="caption-01">{date.toLocaleTimeString()}</span>
         </div>
-        <div className="text-xs text-muted-foreground">
-          {isRunning ? 'In progress...' : 'Completed'}
-        </div>
+        <div className="caption-01">{isRunning ? 'In progress...' : 'Completed'}</div>
       </div>
     </div>
   );

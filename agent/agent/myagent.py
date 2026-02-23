@@ -91,6 +91,12 @@ class MyAgent(LangGraphAgent):
         return ChatPromptTemplate.from_messages(
             [
                 (
+                    "system",
+                    "You are a helpful assistant that plans and writes content based on the "
+                    "user's topic. Chat history is provided via {chat_history} (it may be empty). "
+                    "Use it when helpful to stay consistent across turns.",
+                ),
+                (
                     "user",
                     f"The topic is {{topic}}. Make sure you find any interesting and "
                     f"relevant information given the current year is {datetime.now().year}.",
@@ -133,7 +139,7 @@ class MyAgent(LangGraphAgent):
         }
 
         if not self.config.use_datarobot_llm_gateway and self._identity_header:
-            config["default_headers"] = self._identity_header  # type: ignore[assignment]
+            config["model_kwargs"] = {"extra_headers": self._identity_header}  # type: ignore[assignment]
 
         return ChatLiteLLM(**config)
 

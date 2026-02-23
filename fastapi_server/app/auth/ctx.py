@@ -215,7 +215,7 @@ async def get_auth_ctx(
     config: Config = request.app.state.deps.config
     auth_ctx.metadata = {
         "dr_ctx": dr_ctx.model_dump(),
-        "oauth_implementation": config.oauth_impl.value,
+        "oauth_implementation": config.oauth_impl,
         "application_endpoint": config.application_endpoint,
     }
 

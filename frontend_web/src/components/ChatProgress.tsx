@@ -68,14 +68,14 @@ export function ChatProgress({
                   ) : (
                     <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
                   )}
-                  <span className="text-sm font-medium">
+                  <span className="mn-label">
                     {hasError ? 'Failed' : allDone ? 'Completed' : 'Processing'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge
                     variant={hasError ? 'destructive' : allDone ? 'secondary' : 'default'}
-                    className="text-xs"
+                    className="caption-01"
                   >
                     {hasError
                       ? `${errorCount} error${errorCount > 1 ? 's' : ''}`
@@ -98,7 +98,7 @@ export function ChatProgress({
                   <div key={step.name}>
                     <div
                       className={cn(
-                        'flex items-center gap-2 text-sm transition-all duration-200',
+                        'body flex items-center gap-2 transition-all duration-200',
                         step.done ? 'text-muted-foreground' : 'text-foreground',
                         step.error && 'text-red-500'
                       )}
@@ -115,7 +115,7 @@ export function ChatProgress({
                       </span>
                     </div>
                     {step.error && (
-                      <div className="ml-5.5 mt-1 text-xs text-red-500/80">{step.error}</div>
+                      <div className="caption-01 ml-5.5 mt-1 text-red-500/80">{step.error}</div>
                     )}
                   </div>
                 ))}

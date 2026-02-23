@@ -22,10 +22,10 @@ export function ChatError({ error, createdAt }: ChatErrorEvent) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-sm font-medium text-destructive">Error</span>
-          <span className="text-xs text-muted-foreground">{date.toLocaleTimeString()}</span>
+          <span className="mn-label text-destructive">Error</span>
+          <span className="caption-01">{date.toLocaleTimeString()}</span>
         </div>
-        <div className="text-sm whitespace-pre-wrap break-words text-destructive">{error}</div>
+        <div className="body whitespace-pre-wrap break-words text-destructive">{error}</div>
       </div>
     </div>
   );

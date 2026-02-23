@@ -31,6 +31,7 @@ from typing import Any, AsyncGenerator, Iterator, Union
 from datarobot_genai.core.chat import (
     CustomModelChatResponse,
     CustomModelStreamingResponse,
+    agent_chat_completion_wrapper,
     resolve_authorization_context,
     to_custom_model_chat_response,
     to_custom_model_streaming_response,
@@ -113,7 +114,7 @@ def chat(
     # Invoke the agent
     result = thread_pool_executor.submit(
         event_loop.run_until_complete,
-        agent.invoke(completion_create_params=completion_create_params),
+        agent_chat_completion_wrapper(agent, completion_create_params),
     ).result()
 
     # Check if the result is a generator (streaming response)

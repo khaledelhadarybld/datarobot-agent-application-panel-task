@@ -47,7 +47,7 @@ It supports local development and testing, as well as one-command deployments to
 
 # Quick start
 
-Follow the instructions in the sections below to install the prerequisite tools and develop your agent application locally.
+Follow the instructions in the sections below to install the prerequisite tools and develop agentic starter application template locally.
 
 > [!CAUTION]
 > This repository is only compatible with macOS and Linux operating systems.
@@ -247,7 +247,7 @@ This starts four processes, running in parallel:
 Once all services are running:
 
 1. Open your web browser and navigate to [http://localhost:5173](http://localhost:5173)
-2. You should see the agent application interface
+2. You should see the agentic starter application template interface
 3. Try sending a test message to verify everything is working
 
 From here, you can start customizing your agent by adding your own logic and functionality. See the [Develop your agent](#develop-your-agent) section for more details.

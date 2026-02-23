@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 11.6.1
+- Renamed facing name for `datarobot-agent-application` to Agentic Starter Application Template
+
+- Theme changed to match corporate DataRobot design. This includes colors, fonts, paddings, and typography. Reusable shadcn components from `@dr-ui` registry are installed.
+
+- Inject full stored chat history into `RunAgentInput` so downstream agents receive conversation context
+- Bump agent component from 11.6.3 to 11.6.10: migrate to new interface, refactor agent infra concurrency configuration, fix header forwarding in LangGraph, add debugpy for debugging, bump moderations version
+- Upgrade `datarobot-genai` from 0.4.0 to 0.5.3: chat history support across all agents, converted library extras into dependency groups, MCP tool decorator improvements, DataRobot client for tools, MCP CLI config support
+- Force opentelemetry-semantic-conventions-ai==0.4.13 for incompatiblity with crewai==1.9.3
+- Added .woff2 and .woff and .js files to fastapi_server/static/.gitignore
+
 ## 11.6.0
 - Pin `pyarrow==20.0.0` to avoid error in codespaces
 - Added support for alternative OAuth flow using Authlib

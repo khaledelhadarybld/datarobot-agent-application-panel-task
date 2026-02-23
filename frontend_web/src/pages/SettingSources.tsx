@@ -7,10 +7,11 @@ import {
   useValidateOAuthIdentities,
 } from '@/api/oauth/hooks';
 import { useCurrentUser } from '@/api/auth/hooks';
-import { getBaseUrl } from '@/lib/utils.ts';
+import { getBaseUrl } from '@/lib/url-utils';
 import { Button } from '@/components/ui/button';
 import { PATHS } from '@/constants/path';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Heading } from '@/components/ui/heading';
 
 export const SettingsSources = () => {
   const {
@@ -57,22 +58,22 @@ export const SettingsSources = () => {
 
   return (
     <div className="flex-1 p-8">
-      <h2 className="text-xl font-semibold mb-6">Connected sources</h2>
+      <Heading level={2} className="mb-6">
+        Connected sources
+      </Heading>
       {oauthError && (
         <>
           <AlertCircle className="h-4 w-4" />
           <div>
-            <p className="font-medium mb-1">Failed to connect to OAuth provider</p>
+            <p className="mn-label mb-1">Failed to connect to OAuth provider</p>
             {oauthError.message && oauthError.message !== 'OAuth connection failed' ? (
-              <p className="text-sm">
+              <p className="body">
                 {typeof oauthError.message === 'string'
                   ? oauthError.message
                   : 'Please try again or contact support if the problem persists.'}
               </p>
             ) : (
-              <p className="text-sm">
-                Please try again or contact support if the problem persists.
-              </p>
+              <p className="body">Please try again or contact support if the problem persists.</p>
             )}
           </div>
         </>
@@ -91,7 +92,7 @@ export const SettingsSources = () => {
       )}
 
       {!isLoading && !isErrorFetchingProviders && providers.length === 0 && (
-        <p className="text-muted-foreground">No sources available.</p>
+        <p className="body-secondary">No sources available.</p>
       )}
 
       {!isLoading && providers.length > 0 && (
@@ -99,7 +100,7 @@ export const SettingsSources = () => {
           {providers.map(provider => (
             <div key={provider.id} className="flex items-center justify-between py-4">
               <div>
-                <p className="font-medium">
+                <p className="mn-label">
                   {provider.type
                     ? provider.type.charAt(0).toUpperCase() + provider.type.slice(1)
                     : provider.name || provider.id}
@@ -107,12 +108,12 @@ export const SettingsSources = () => {
                 {/* placeholder description */}
               </div>
               {connectedIds?.has(provider.id) ? (
-                <span className="flex items-center gap-1 text-green-500 font-medium">
+                <span className="mn-label flex items-center gap-1 text-green-500">
                   <CheckCircle2 className="w-4 h-4" /> Connected
                 </span>
               ) : (
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   disabled={isPending && connectingId === provider.id}
                   onClick={() => {
                     setConnectingId(provider.id);

@@ -3,3 +3,6 @@ assets/index*
 assets/react*svg
 assets/vite*svg
 index.html
+assets/*.woff2
+assets/*.woff
+assets/*.js

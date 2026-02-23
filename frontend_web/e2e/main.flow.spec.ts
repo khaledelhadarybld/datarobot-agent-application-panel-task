@@ -49,14 +49,14 @@ test.describe('Main flow test', () => {
         await page.getByRole('textbox').fill('tell some fun fact');
         await page.getByTestId('send-message-btn').click();
 
-        await page.locator('#sidebar-chats').locator('[test-id^="chat-"]')?.last().click();
+        await page.locator('#sidebar-chats').locator('[data-testid^="chat-"]')?.last().click();
         await expect(page.getByTestId('send-message-btn')).toBeVisible();
 
-        await page.locator('#sidebar-chats').locator('[test-id^="chat-"]')?.first().click();
+        await page.locator('#sidebar-chats').locator('[data-testid^="chat-"]')?.first().click();
 
         await expect.poll(
             async () => {
-                const content = await page.locator('[test-id^="default-assistant-message-"]')?.first();
+                const content = await page.locator('[data-testid^="default-assistant-message-"]')?.first();
                 const text = await content.textContent();
                 contentCount =  text?.length ?? 0;
                 return contentCount;
@@ -69,9 +69,9 @@ test.describe('Main flow test', () => {
 
     test('remove chat', async () => {
         test.setTimeout(TIMEOUT); // to wait for chat to be deleted
-        await page.locator('#sidebar-chats').locator('[test-id^="chat-"]')?.last().click();
+        await page.locator('#sidebar-chats').locator('[data-testid^="chat-"]')?.last().click();
         const oldUrl = page.url();
-        await page.locator('.dropdown-menu-trigger')?.last().click();
+        await page.locator('[data-slot="dropdown-menu-trigger"]')?.last().click();
         await page.getByTestId('delete-chat-menu-item').click();
         await page.getByTestId('modal-confirm').click();
         await expect.poll(() => page.url(), {

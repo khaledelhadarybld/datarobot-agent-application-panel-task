@@ -64,7 +64,7 @@ export function ChatPage({
   });
 
   return (
-    <div className="chat">
+    <div className="flex flex-row w-full h-svh">
       <ChatSidebar
         isLoading={isLoadingChats}
         chatId={chatId}
@@ -145,24 +145,27 @@ export function ChatImplementation({ chatId }: { chatId: string }) {
 
   return (
     <Chat initialMessages={initialMessages}>
-      <ChatMessages isLoading={isLoadingHistory} messages={combinedEvents} chatId={chatId}>
-        {combinedEvents &&
-          combinedEvents.map(m => {
-            if (isErrorStateEvent(m)) {
-              return <ChatError key={m.value.id} {...m.value} />;
-            }
-            if (isMessageStateEvent(m)) {
-              return <ChatMessagesMemo key={m.value.id} {...m.value} />;
-            }
-            if (isStepStateEvent(m)) {
-              return <StepEvent key={m.value.id} {...m.value} />;
-            }
-            if (isThinkingEvent(m)) {
-              return <ThinkingEvent key={m.type} />;
-            }
-          })}
-      </ChatMessages>
-      <ChatProgress progress={progress || {}} deleteProgress={deleteProgress} />
+      <div className="flex flex-col grow gap-2 min-h-0 overflow-hidden">
+        <ChatMessages isLoading={isLoadingHistory} messages={combinedEvents} chatId={chatId}>
+          {combinedEvents &&
+            combinedEvents.map(m => {
+              if (isErrorStateEvent(m)) {
+                return <ChatError key={m.value.id} {...m.value} />;
+              }
+              if (isMessageStateEvent(m)) {
+                return <ChatMessagesMemo key={m.value.id} {...m.value} />;
+              }
+              if (isStepStateEvent(m)) {
+                return <StepEvent key={m.value.id} {...m.value} />;
+              }
+              if (isThinkingEvent(m)) {
+                return <ThinkingEvent key={m.type} />;
+              }
+            })}
+        </ChatMessages>
+        <ChatProgress progress={progress || {}} deleteProgress={deleteProgress} />
+      </div>
+
       <ChatTextInput
         userInput={userInput}
         setUserInput={setUserInput}

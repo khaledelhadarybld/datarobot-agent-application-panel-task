@@ -47,7 +47,18 @@ class Config(DataRobotAppFrameworkBaseSettings):
         agent_port = info.data.get("agent_port", 8842)
         return f"http://localhost:{agent_port}"
 
-    oauth_impl: OAuthImpl = OAuthImpl.DATAROBOT
+    oauth_impl: OAuthImpl | None = None
+
+    @field_validator("oauth_impl", mode="before")
+    @classmethod
+    def set_oauth_impl(cls, v: str | OAuthImpl | None) -> str | OAuthImpl:
+        # Either read via runtime parameters, or infer from infra for local development
+        if v is not None and v != "":
+            return v
+        if OAuthImpl.AUTHLIB in os.getenv("INFRA_ENABLE_OAUTH", ""):
+            return OAuthImpl.AUTHLIB
+        return OAuthImpl.DATAROBOT
+
     datarobot_oauth_providers: Sequence[str] = ()
 
     google_client_id: str | None = None

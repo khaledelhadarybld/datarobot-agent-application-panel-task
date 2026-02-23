@@ -1,39 +1,188 @@
 import * as React from 'react';
-import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 import { cn } from '@/lib/utils';
 
-const badgeVariants = cva(
-  'inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden',
+const BADGE_TYPE = {
+  default: 'default',
+  outline: 'outline',
+} as const;
+
+const BADGE_VARIANT = {
+  default: 'default',
+  destructive: 'destructive',
+  info: 'info',
+  warning: 'warning',
+  success: 'success',
+} as const;
+
+// Hover styles map - only applied when onClick is provided
+const BADGE_HOVER_STYLES: Record<
+  keyof typeof BADGE_TYPE,
+  Record<keyof typeof BADGE_VARIANT, string>
+> = {
+  [BADGE_TYPE.default]: {
+    [BADGE_VARIANT.destructive]:
+      'hover:bg-[color-mix(in_oklch,var(--destructive)_90%,black)] dark:hover:bg-[color-mix(in_oklch,var(--destructive)_80%,white)]',
+    [BADGE_VARIANT.info]:
+      'hover:bg-[color-mix(in_oklch,var(--link)_90%,black)] dark:hover:bg-[color-mix(in_oklch,var(--link)_80%,white)]',
+    [BADGE_VARIANT.warning]:
+      'hover:bg-[color-mix(in_oklch,var(--warning)_90%,black)] dark:hover:bg-[color-mix(in_oklch,var(--warning)_80%,white)]',
+    [BADGE_VARIANT.success]:
+      'hover:bg-[color-mix(in_oklch,var(--success)_90%,black)] dark:hover:bg-[color-mix(in_oklch,var(--success)_80%,white)]',
+    [BADGE_VARIANT.default]:
+      'hover:bg-[color-mix(in_oklch,var(--border)_90%,black)] dark:hover:bg-[color-mix(in_oklch,var(--border)_80%,white)]',
+  },
+  [BADGE_TYPE.outline]: {
+    [BADGE_VARIANT.destructive]:
+      'hover:border-[color-mix(in_oklch,var(--destructive)_75%,black)] hover:text-[color-mix(in_oklch,var(--destructive)_75%,black)] dark:hover:border-[color-mix(in_oklch,var(--destructive)_80%,white)] dark:hover:text-[color-mix(in_oklch,var(--destructive)_80%,white)]',
+    [BADGE_VARIANT.info]:
+      'hover:border-[color-mix(in_oklch,var(--link)_75%,black)] hover:text-[color-mix(in_oklch,var(--link)_75%,black)] dark:hover:border-[color-mix(in_oklch,var(--link)_80%,white)] dark:hover:text-[color-mix(in_oklch,var(--link)_80%,white)]',
+    [BADGE_VARIANT.warning]:
+      'hover:border-[color-mix(in_oklch,var(--warning)_75%,black)] hover:text-[color-mix(in_oklch,var(--warning)_75%,black)] dark:hover:border-[color-mix(in_oklch,var(--warning)_80%,white)] dark:hover:text-[color-mix(in_oklch,var(--warning)_80%,white)]',
+    [BADGE_VARIANT.success]:
+      'hover:border-[color-mix(in_oklch,var(--success)_75%,black)] hover:text-[color-mix(in_oklch,var(--success)_75%,black)] dark:hover:border-[color-mix(in_oklch,var(--success)_80%,white)] dark:hover:text-[color-mix(in_oklch,var(--success)_80%,white)]',
+    [BADGE_VARIANT.default]:
+      'hover:border-[color-mix(in_oklch,var(--secondary-foreground)_75%,black)] hover:text-[color-mix(in_oklch,var(--secondary-foreground)_75%,black)] dark:hover:border-[color-mix(in_oklch,var(--secondary-foreground)_80%,white)] dark:hover:text-[color-mix(in_oklch,var(--secondary-foreground)_80%,white)]',
+  },
+};
+
+const BADGE_VARIANTS = cva(
+  `
+    inline-flex items-center rounded-xl border px-2 py-0.5 text-xs font-semibold transition-colors
+    focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none
+  `,
   {
     variants: {
+      type: {
+        [BADGE_TYPE.default]: '',
+        [BADGE_TYPE.outline]: '',
+      },
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground [a&]:hover:bg-primary/90',
-        secondary:
-          'border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90',
-        destructive:
-          'border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
-        outline: 'text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
+        [BADGE_VARIANT.default]: '',
+        [BADGE_VARIANT.destructive]: '',
+        [BADGE_VARIANT.info]: '',
+        [BADGE_VARIANT.warning]: '',
+        [BADGE_VARIANT.success]: '',
       },
     },
+    compoundVariants: [
+      // Default type - destructive (error)
+      {
+        type: BADGE_TYPE.default,
+        variant: BADGE_VARIANT.destructive,
+        className: 'border-transparent bg-(--destructive) text-(--primary-foreground) shadow-sm',
+      },
+      // Default type - info
+      {
+        type: BADGE_TYPE.default,
+        variant: BADGE_VARIANT.info,
+        className: 'border-transparent bg-(--link) text-(--primary-foreground) shadow-sm',
+      },
+      // Default type - warning
+      {
+        type: BADGE_TYPE.default,
+        variant: BADGE_VARIANT.warning,
+        className: 'border-transparent bg-(--warning) text-(--primary-foreground) shadow-sm',
+      },
+      // Default type - success
+      {
+        type: BADGE_TYPE.default,
+        variant: BADGE_VARIANT.success,
+        className: 'border-transparent bg-(--success) text-(--primary-foreground) shadow-sm',
+      },
+      // Default type - default
+      {
+        type: BADGE_TYPE.default,
+        variant: BADGE_VARIANT.default,
+        className: `
+          border-transparent bg-(--border) text-(--foreground) shadow-sm
+          dark:bg-(--border)
+        `,
+      },
+      // Outline type - destructive (error)
+      {
+        type: BADGE_TYPE.outline,
+        variant: BADGE_VARIANT.destructive,
+        className: `
+          border-(--destructive) bg-transparent text-(--destructive)
+          dark:border-[color-mix(in_oklch,var(--destructive)_70%,white)] dark:text-[color-mix(in_oklch,var(--destructive)_70%,white)]
+        `,
+      },
+      // Outline type - info
+      {
+        type: BADGE_TYPE.outline,
+        variant: BADGE_VARIANT.info,
+        className: 'border-(--link) bg-transparent text-(--link)',
+      },
+      // Outline type - warning
+      {
+        type: BADGE_TYPE.outline,
+        variant: BADGE_VARIANT.warning,
+        className: 'border-(--warning) bg-transparent text-(--warning)',
+      },
+      // Outline type - success
+      {
+        type: BADGE_TYPE.outline,
+        variant: BADGE_VARIANT.success,
+        className: 'border-(--success) bg-transparent text-(--success)',
+      },
+      // Outline type - default
+      {
+        type: BADGE_TYPE.outline,
+        variant: BADGE_VARIANT.default,
+        className: 'border-(--secondary-foreground) bg-transparent text-(--secondary-foreground)',
+      },
+    ],
     defaultVariants: {
-      variant: 'default',
+      type: BADGE_TYPE.default,
+      variant: BADGE_VARIANT.default,
     },
   }
 );
 
-function Badge({
-  className,
-  variant,
-  asChild = false,
-  ...props
-}: React.ComponentProps<'span'> & VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
-  const Comp = asChild ? Slot : 'span';
+const Badge = React.forwardRef<
+  HTMLDivElement | HTMLButtonElement,
+  React.HTMLAttributes<HTMLDivElement> &
+    VariantProps<typeof BADGE_VARIANTS> & {
+      type?: keyof typeof BADGE_TYPE;
+      variant?: keyof typeof BADGE_VARIANT;
+    }
+>(({ className, type, variant, onClick, ...props }, ref) => {
+  const badgeType = type ?? BADGE_TYPE.default;
+  const badgeVariant = variant ?? BADGE_VARIANT.default;
+  const hasOnClick = !!onClick;
+
+  const badgeClassName = cn(
+    BADGE_VARIANTS({ type: badgeType, variant: badgeVariant }),
+    hasOnClick && 'cursor-pointer',
+    hasOnClick && BADGE_HOVER_STYLES[badgeType]?.[badgeVariant],
+    className
+  );
+
+  if (hasOnClick) {
+    return (
+      <button
+        ref={ref as React.ForwardedRef<HTMLButtonElement>}
+        type="button"
+        data-slot="badge"
+        onClick={onClick as unknown as React.MouseEventHandler<HTMLButtonElement>}
+        className={badgeClassName}
+        {...(props as React.ButtonHTMLAttributes<HTMLButtonElement>)}
+      />
+    );
+  }
 
   return (
-    <Comp data-slot="badge" className={cn(badgeVariants({ variant }), className)} {...props} />
+    <div
+      ref={ref as React.ForwardedRef<HTMLDivElement>}
+      data-slot="badge"
+      className={badgeClassName}
+      {...props}
+    />
   );
-}
+});
 
-export { Badge, badgeVariants };
+Badge.displayName = 'Badge';
+
+export { Badge, BADGE_VARIANTS, BADGE_TYPE, BADGE_VARIANT };
