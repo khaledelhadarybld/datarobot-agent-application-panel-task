@@ -91,11 +91,12 @@ def cli(
     # Run the agent with a string user prompt
     > task cli -- execute --user_prompt "Artificial Intelligence"
 
-    # Run the agent with a JSON user prompt
-    > task cli -- execute --user_prompt '{"topic": "Artificial Intelligence"}'
+    # Run the agent with a JSON user prompt    > task cli -- execute --user_prompt '{"topic": "Artificial Intelligence"}'
 
-    # Run the agent with a JSON file containing the full chat completion json
+    # Run the agent with a JSON file containing the full chat completion json; include prior messages for chat history.
+    # Prior messages are injected as {chat_history} when the prompt template declares it.
     > task cli -- execute --completion_json "example-completion.json"
+    > task cli -- execute --completion_json "example-chat-history-completion.json"
 
     # Run the deployed agent with a string user prompt [Other prompt methods are also supported similar to execute]
     > task cli -- execute-deployment --user_prompt "Artificial Intelligence" --deployment_id 680a77a9a3
@@ -132,11 +133,12 @@ def execute(
     # Run the agent with a string user prompt and show full output
     > task cli -- execute --user_prompt "Artificial Intelligence" --show_output
 
-    # Run the agent with a JSON user prompt
-    > task cli -- execute --user_prompt '{"topic": "Artificial Intelligence"}'
+    # Run the agent with a JSON user prompt    > task cli -- execute --user_prompt '{"topic": "Artificial Intelligence"}'
 
-    # Run the agent with a JSON file containing the full chat completion json
+    # Run the agent with a JSON file containing the full chat completion json; include prior messages for chat history.
+    # Prior messages are injected as {chat_history} when the prompt template declares it.
     > task cli -- execute --completion_json "example-completion.json"
+    > task cli -- execute --completion_json "example-chat-history-completion.json"
     """
     if len(user_prompt) == 0 and len(completion_json) == 0:
         raise click.UsageError("User prompt message or completion json must provided.")
@@ -215,11 +217,12 @@ def execute_deployment(
     # Run the agent with a string user prompt, streaming enabled
     > task cli -- execute-deployment --user_prompt "Artificial Intelligence" --stream --deployment_id 680a77a9a3
 
-    # Run the agent with a JSON user prompt
-    > task cli -- execute-deployment --user_prompt '{"topic": "Artificial Intelligence"}' --deployment_id 680a77a9a3
+    # Run the agent with a JSON user prompt    > task cli -- execute-deployment --user_prompt '{"topic": "Artificial Intelligence"}' --deployment_id 680a77a9a3
 
-    # Run the agent with a JSON file containing the full chat completion json
+    # Run the agent with a JSON file containing the full chat completion json; include prior messages for chat history.
+    # Prior messages are injected as {chat_history} when the prompt template declares it.
     > task cli -- execute-deployment --completion_json "example-completion.json" --deployment_id 680a77a9a3
+    > task cli -- execute-deployment --completion_json "example-chat-history-completion.json" --deployment_id 680a77a9a3
     """
     if len(user_prompt) == 0 and len(completion_json) == 0:
         raise click.UsageError("User prompt message or completion json must provided.")

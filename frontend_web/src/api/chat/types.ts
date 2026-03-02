@@ -23,12 +23,13 @@ type JSONValue =
 
 export type MessageResponse = {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'reasoning';
   createdAt: Date;
   threadId?: string;
   resourceId?: string;
   type?: string;
   content: MessageContent;
+  encryptedValue?: string;
 };
 
 export type MessageContent = {

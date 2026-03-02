@@ -1,5 +1,9 @@
 import { v4 as uuid } from 'uuid';
 import type {
+  ReasoningMessageChunkEvent,
+  ReasoningMessageContentEvent,
+  ReasoningMessageEndEvent,
+  ReasoningMessageStartEvent,
   TextMessageChunkEvent,
   TextMessageContentEvent,
   TextMessageEndEvent,
@@ -15,6 +19,12 @@ type AgUiTextEvent =
   | TextMessageContentEvent
   | TextMessageEndEvent
   | TextMessageChunkEvent;
+
+type AgUiReasoningEvent =
+  | ReasoningMessageStartEvent
+  | ReasoningMessageContentEvent
+  | ReasoningMessageChunkEvent
+  | ReasoningMessageEndEvent;
 
 type AgUiToolEvent = ToolCallEndEvent;
 
@@ -195,4 +205,67 @@ export function messageToStateEvent(message: MessageResponse): ChatStateEventByT
     type: 'message',
     value: message,
   };
+}
+
+function reasoningPart(reasoningText: string): {
+  type: 'reasoning';
+  reasoning: string;
+  details: Array<{ type: 'text'; text: string }>;
+} {
+  return {
+    type: 'reasoning',
+    reasoning: reasoningText,
+    details: reasoningText ? [{ type: 'text', text: reasoningText }] : [],
+  };
+}
+
+export function createReasoningMessage(
+  event: AgUiReasoningEvent,
+  reasoningMessageBuffer = ''
+): MessageResponse {
+  const reasoningMessage: MessageResponse = {
+    id: event.messageId ?? uuid(),
+    role: 'reasoning',
+    content: {
+      format: 2,
+      parts: [],
+      content: '',
+    },
+    createdAt: new Date(),
+    threadId: '',
+    resourceId: uuid(),
+  };
+
+  switch (event.type) {
+    case EventType.REASONING_MESSAGE_START:
+      return { ...reasoningMessage, id: event.messageId ?? reasoningMessage.id };
+    case EventType.REASONING_MESSAGE_CONTENT: {
+      const fullContent = reasoningMessageBuffer + event.delta;
+      return {
+        ...reasoningMessage,
+        id: event.messageId ?? reasoningMessage.id,
+        content: {
+          format: 2,
+          parts: [reasoningPart(fullContent)],
+          content: fullContent,
+        },
+      };
+    }
+    case EventType.REASONING_MESSAGE_END:
+      return { ...reasoningMessage, id: event.messageId ?? reasoningMessage.id };
+
+    case EventType.REASONING_MESSAGE_CHUNK: {
+      return {
+        ...reasoningMessage,
+        id: event.messageId ?? '',
+        content: {
+          format: 2,
+          parts: event.delta ? [reasoningPart(event.delta)] : [],
+          content: event.delta,
+        },
+      };
+    }
+    default:
+      return reasoningMessage;
+  }
 }

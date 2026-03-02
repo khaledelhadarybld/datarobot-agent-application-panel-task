@@ -18,69 +18,33 @@ export type ChatMessageProps = {
   messages?: ChatStateEvent[];
 } & PropsWithChildren;
 
-const THRESHOLD = 50;
-
-export function ChatMessages({ children, messages, isLoading, chatId }: ChatMessageProps) {
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const shouldAutoscrollRef = useRef<boolean>(true);
-  const prevScrollRef = useRef<number>(0);
-
-  const onChatScroll = () => {
-    if (!scrollContainerRef.current) {
-      return;
-    }
-    if (prevScrollRef.current > scrollContainerRef.current.scrollTop) {
-      shouldAutoscrollRef.current = false;
-    } else if (scrollContainerRef.current.scrollTop - prevScrollRef.current > THRESHOLD) {
-      shouldAutoscrollRef.current = true;
-    }
-    prevScrollRef.current = scrollContainerRef.current.scrollTop;
-  };
-
-  useEffect(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-    }
-  }, [chatId]);
-
-  useEffect(() => {
-    if (scrollContainerRef.current && shouldAutoscrollRef.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-    }
-  }, [messages]);
-
+export function ChatMessages({ children, messages, isLoading }: ChatMessageProps) {
   return (
-    <div
-      className="flex-1 min-h-0 overflow-y-auto"
-      ref={scrollContainerRef}
-      onScroll={onChatScroll}
-    >
-      <div className="flex flex-col gap-2 px-2">
-        {isLoading ? (
-          <div className="space-y-4">
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-20 w-full" />
-          </div>
-        ) : (
-          children ||
-          (messages &&
-            messages.map(m => {
-              if (isErrorStateEvent(m)) {
-                return <ChatError key={m.value.id} {...m.value} />;
-              }
-              if (isMessageStateEvent(m)) {
-                return <ChatMessagesMemo key={m.value.id} {...m.value} />;
-              }
-              if (isStepStateEvent(m)) {
-                return <StepEvent key={m.value.id} {...m.value} />;
-              }
-              if (isThinkingEvent(m)) {
-                return <ThinkingEvent key={m.type} />;
-              }
-            }))
-        )}
-      </div>
+    <div className="flex flex-col gap-2">
+      {isLoading && messages?.length === 0 ? (
+        <div className="space-y-4">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+      ) : (
+        children ||
+        (messages &&
+          messages.map(m => {
+            if (isErrorStateEvent(m)) {
+              return <ChatError key={m.value.id} {...m.value} />;
+            }
+            if (isMessageStateEvent(m)) {
+              return <ChatMessagesMemo key={m.value.id} {...m.value} />;
+            }
+            if (isStepStateEvent(m)) {
+              return <StepEvent key={m.value.id} {...m.value} />;
+            }
+            if (isThinkingEvent(m)) {
+              return <ThinkingEvent key={m.type} />;
+            }
+          }))
+      )}
     </div>
   );
 }

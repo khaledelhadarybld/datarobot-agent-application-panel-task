@@ -5,7 +5,7 @@ description = "Implementation of agent"
 readme = "README.md"
 requires-python = ">=3.10, <3.14"
 dependencies = [
-    "datarobot-genai[langgraph] ==0.5.3",
+    "datarobot-genai[langgraph] ==0.5.7",
     "datarobot-moderations==11.2.16",
     "datarobot-drum==1.17.11",  # Lift upper limit after asyncio migration finished
     "datarobot-mlops==11.1.0",
@@ -16,6 +16,7 @@ dependencies = [
     "opentelemetry-sdk>=1.33.0,<2.0.0",
     "pdfminer.six>=20251230",  # CVE fix
     "langgraph-checkpoint>=3.0.0", # CVE fix
+    "nltk>=3.9.3", # CVE fix
     "anyio>=4.11.0,<4.12.0", # Fix: ImportError: `set_current_async_library`
     "packaging>=25.0,<26.0",
 ]
@@ -188,7 +189,7 @@ override-dependencies = [
     "opentelemetry-semantic-conventions-ai==0.4.13",
 ]
 package = true
-exclude-dependencies = ["gevent"]
+constraint-dependencies = ["gevent; sys_platform == 'never'"]
 
 # This can be set to allow for proxy indexes in air-gapped environments
 # [[tool.uv.index]]

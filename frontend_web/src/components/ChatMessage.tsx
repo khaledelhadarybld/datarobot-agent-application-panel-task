@@ -9,14 +9,16 @@ import {
   CheckCircle2,
   Loader2,
   AlertTriangle,
+  Brain,
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import { CodeBlock } from '@/components/ui/code-block';
 import { cn } from '@/lib/utils';
-import type { ContentPart, TextUIPart, ToolInvocationUIPart } from '@/types/message';
+import type { ContentPart, ToolInvocationUIPart } from '@/types/message';
 import { useChatContext } from '@/hooks/use-chat-context';
 import type { ChatMessageEvent } from '@/types/events';
 import { Badge } from '@/components/ui/badge';
+import { Markdown } from '@/components/ui/markdown';
+import { unwrapMarkdownCodeBlocks } from '@/lib/markdown';
 
 interface ChatMessageErrorBoundaryProps {
   children: ReactNode;
@@ -74,11 +76,12 @@ class ChatMessageErrorBoundary extends Component<
   }
 }
 
-const MarkdownRegExp = /^```markdown\s*|\s*```$/g;
-
 export function UniversalContentPart({ part }: { part: ContentPart }) {
   if (part.type === 'text') {
-    return <TextContentPart part={part} />;
+    return <TextContentPart content={part.text} />;
+  }
+  if (part.type === 'reasoning') {
+    return <TextContentPart content={part.reasoning} />;
   }
   if (part.type === 'tool-invocation') {
     return <ToolInvocationPart part={part} />;
@@ -86,28 +89,8 @@ export function UniversalContentPart({ part }: { part: ContentPart }) {
   return <CodeBlock code={JSON.stringify(part, null, '  ')} />;
 }
 
-const MarkdownBlock = memo(({ block, index }: { block: string; index: number }) => {
-  if (block.startsWith('```markdown')) {
-    const inner = block.replace(MarkdownRegExp, '');
-    return (
-      <div key={index} className="rounded-lg p-2 overflow-auto">
-        <ReactMarkdown>{inner}</ReactMarkdown>
-      </div>
-    );
-  } else {
-    return <ReactMarkdown key={index}>{block}</ReactMarkdown>;
-  }
-});
-
-export function TextContentPart({ part }: { part: TextUIPart }) {
-  const blocks = part.text.split(/(```markdown[\s\S]*?```)/g);
-  return (
-    <>
-      {blocks.map((block, i) => (
-        <MarkdownBlock key={i} block={block} index={i} />
-      ))}
-    </>
-  );
+export function TextContentPart({ content }: { content: string }) {
+  return <Markdown content={content ? unwrapMarkdownCodeBlocks(content) : ''} />;
 }
 
 export function ToolInvocationPart({ part }: { part: ToolInvocationUIPart }) {
@@ -129,6 +112,17 @@ export function ToolInvocationPart({ part }: { part: ToolInvocationUIPart }) {
   }
 
   const hasResult = !!toolInvocation.result;
+
+  const result = useMemo(() => {
+    try {
+      if (toolInvocation.result) {
+        return JSON.stringify(JSON.parse(toolInvocation.result), null, '  ');
+      }
+    } catch (e) {
+      console.debug('Tool result is not a JSON', toolInvocation.result);
+    }
+    return toolInvocation.result || '';
+  }, [toolInvocation.result]);
 
   return (
     <div className="my-2 rounded-lg border border-border bg-card/50 dark:bg-card/30 overflow-hidden">
@@ -158,13 +152,13 @@ export function ToolInvocationPart({ part }: { part: ToolInvocationUIPart }) {
       )}
 
       {/* Result Section */}
-      {toolInvocation.result && (
+      {result && (
         <div>
           <div className="caption-01 flex items-center gap-1.5 px-3 py-1.5 bg-muted/20">
             <ChevronRight className="w-3 h-3" />
             Result
           </div>
-          <CodeBlock code={toolInvocation.result} />
+          <CodeBlock code={result} />
         </div>
       )}
     </div>
@@ -179,11 +173,14 @@ function ChatMessageContent({
   content,
   type = 'default',
 }: ChatMessageEvent) {
+  const isUser = role === 'user';
   let Icon = useMemo(() => {
-    if (role === 'user') {
+    if (isUser) {
       return User;
     } else if (role === 'system') {
       return Cog;
+    } else if (role === 'reasoning') {
+      return Brain;
     } else if (content.parts.some(({ type }) => type === 'tool-invocation')) {
       return Hammer;
     } else {
@@ -207,7 +204,9 @@ function ChatMessageContent({
               ? 'bg-primary text-primary-foreground'
               : role === 'assistant'
                 ? 'bg-secondary text-secondary-foreground'
-                : 'bg-accent text-accent-foreground'
+                : role === 'reasoning'
+                  ? 'bg-muted text-muted-foreground'
+                  : 'bg-accent text-accent-foreground'
           )}
         >
           <Icon className="w-4 h-4" />

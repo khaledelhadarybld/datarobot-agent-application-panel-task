@@ -7,16 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 11.6.2
+- Added reasoning event types support to agentic playground
+- Fixed markdown styles, scroll issue, minor layout fixes for Playground Chat component
+- Fixed frontend dependencies installation for task dev and `fastapi_server:test`
+- Updated `agent` component from 11.6.11 to 11.6.18:
+  - Added execution environment version fallback via resolve_execution_environment_version utility
+  - Added chat history example (example-chat-history-completion.json) and per-framework CLI docs
+  - Bumped datarobot-genai from 0.5.3 to 0.5.7 (MCP is no longer required for NAT)
+  - Fixed `nltk` CVE (nltk>=3.9.3)
+  - Simplified CLI chat history docstrings (unified across frameworks)
+- Updated `mcp_server` component from 0.0.5 to 0.0.13:
+  - Updated server startup to handle exceptions
+  - Added Lineage support
+  - Bumped up the datarobot-genai[drmcp] Sub Package (dependencies clean up)
+- Updated `dr-cli` minimum version to 0.2.50
+
+
 ## 11.6.1
 - Renamed facing name for `datarobot-agent-application` to Agentic Starter Application Template
 
 - Theme changed to match corporate DataRobot design. This includes colors, fonts, paddings, and typography. Reusable shadcn components from `@dr-ui` registry are installed.
 
 - Inject full stored chat history into `RunAgentInput` so downstream agents receive conversation context
-- Bump agent component from 11.6.3 to 11.6.10: migrate to new interface, refactor agent infra concurrency configuration, fix header forwarding in LangGraph, add debugpy for debugging, bump moderations version
-- Upgrade `datarobot-genai` from 0.4.0 to 0.5.3: chat history support across all agents, converted library extras into dependency groups, MCP tool decorator improvements, DataRobot client for tools, MCP CLI config support
+- Bump agent component from 11.6.3 to 11.6.10
+  - Migrate to new interface
+  - Refactor agent infra concurrency configuration
+  - Fix header forwarding in LangGraph
+  - Add debugpy for debugging
+  - Bump moderations version
+- Upgrade `datarobot-genai` from 0.4.0 to 0.5.3
+  - Chat history support across all agents
+  - Converted library extras into dependency groups
+  - MCP tool decorator improvements
+  - DataRobot client for tools
+  - MCP CLI config support
 - Force opentelemetry-semantic-conventions-ai==0.4.13 for incompatiblity with crewai==1.9.3
-- Added .woff2 and .woff and .js files to fastapi_server/static/.gitignore
 
 ## 11.6.0
 - Pin `pyarrow==20.0.0` to avoid error in codespaces

@@ -68,6 +68,7 @@ tasks:
       SESSION_SECRET_KEY: test-secret-key
     cmds:
       - echo "🧪 Running tests.."
+      - cd ../frontend_web && task build
       - "{{.UV_CMD}} run pytest --disable-warnings -s --cov --cov-report=html --cov-report=term --cov-report xml:.coverage.xml"
 
   copyright:

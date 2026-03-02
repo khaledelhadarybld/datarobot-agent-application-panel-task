@@ -19,6 +19,7 @@ interface ChatState {
   state: Record<string, unknown>;
   events: ChatStateEvent[];
   message: MessageResponse | null;
+  reasoningMessage: MessageResponse | null;
   userInput: string;
   progress: ProgressState;
   initialState: Record<string, unknown>;
@@ -31,6 +32,7 @@ interface ChatState {
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: string }) => void;
   setState: (nextState: Record<string, unknown>) => void;
   setMessage: (message: MessageResponse | null) => void;
+  setReasoningMessage: (message: MessageResponse | null) => void;
   setProgress: (cb: (progress: ProgressState) => void) => void;
   deleteProgress: (progressId: string) => void;
   setUserInput: (userInput: string) => void;
@@ -61,6 +63,7 @@ const createChatSliceFactory = ({ id }: CreateChatArgs) => {
       state: {},
       events: [],
       message: null,
+      reasoningMessage: null,
       userInput: '',
       initialState: {},
       progress: {},
@@ -122,6 +125,12 @@ const createChatSliceFactory = ({ id }: CreateChatArgs) => {
         set(state => {
           if (state.chats[id]) {
             state.chats[id].message = message;
+          }
+        }),
+      setReasoningMessage: (message: MessageResponse | null) =>
+        set(state => {
+          if (state.chats[id]) {
+            state.chats[id].reasoningMessage = message;
           }
         }),
       setProgress: (cb: (progress: ProgressState) => void) =>

@@ -9,6 +9,10 @@ type ExtendedTOptions = TOptions & {
   plural?: string;
 };
 
+i18n.init({
+  showSupportNotice: false,
+});
+
 // Import translation files
 import esTranslations from './locales/es_419.json';
 import frTranslations from './locales/fr.json';

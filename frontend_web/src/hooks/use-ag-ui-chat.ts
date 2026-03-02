@@ -6,6 +6,7 @@ import {
   type RunErrorEvent,
   type StateSnapshotEvent,
   type TextMessageContentEvent,
+  type ReasoningMessageContentEvent,
   type TextMessageStartEvent,
   type ToolCallEndEvent,
   type CustomEvent,
@@ -16,6 +17,7 @@ import type { AgentSubscriberParams, ToolCallResultEvent } from '@ag-ui/client';
 
 import {
   createCustomMessageWidget,
+  createReasoningMessage,
   createTextMessageFromAgUiEvent,
   createTextMessageFromUserInput,
   createToolMessageFromAgUiEvent,
@@ -52,6 +54,8 @@ export function useAgUiChat({
     addToolResult,
     message,
     setMessage,
+    reasoningMessage,
+    setReasoningMessage,
     progress,
     setProgress,
     deleteProgress,
@@ -132,6 +136,30 @@ export function useAgUiChat({
         }
         addEvent({ type: 'message', value: getCurrenChatState(chatId)?.message! });
         setMessage(null);
+      },
+      onReasoningStartEvent() {
+        setIsThinking(true);
+      },
+      onReasoningMessageContentEvent(
+        params: {
+          event: ReasoningMessageContentEvent;
+          reasoningMessageBuffer: string;
+        } & AgentSubscriberParams
+      ) {
+        const { event, reasoningMessageBuffer } = params;
+        const reasoningMsg = createReasoningMessage(event, reasoningMessageBuffer);
+        setReasoningMessage(reasoningMsg);
+        setIsThinking(false);
+      },
+      onReasoningMessageEndEvent() {
+        if (!getCurrenChatState(chatId)?.reasoningMessage) {
+          return;
+        }
+        addEvent({ type: 'message', value: getCurrenChatState(chatId)?.reasoningMessage! });
+        setReasoningMessage(null);
+      },
+      onReasoningEndEvent() {
+        setIsThinking(false);
       },
       onToolCallStartEvent() {
         setIsThinking(false);
@@ -295,6 +323,10 @@ export function useAgUiChat({
       result.push(messageToStateEvent(message));
     }
 
+    if (reasoningMessage) {
+      result.push(messageToStateEvent(reasoningMessage));
+    }
+
     if (isThinking) {
       result.push({
         type: 'thinking',
@@ -306,7 +338,7 @@ export function useAgUiChat({
       });
     }
     return result;
-  }, [history, events, message, isLoadingHistory, isThinking, initialMessages]);
+  }, [history, events, message, reasoningMessage, isLoadingHistory, isThinking, initialMessages]);
 
   function registerOrUpdateTool(id: string, tool: ToolSerialized) {
     setTools(state => ({

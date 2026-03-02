@@ -42,7 +42,7 @@ tasks:
       - "echo '✨ Choose your agentic framework.'"
       - |
         PYTHONWARNINGS=ignore uvx copier recopy -a .datarobot/answers/agent-agent.yml \
-        -r 11.6.11 \
+        -r 11.6.18 \
         --data base_answers_file=.datarobot/answers/base.yml \
         --data agent_app_name=agent \
         --data agent_development_port=8842 \

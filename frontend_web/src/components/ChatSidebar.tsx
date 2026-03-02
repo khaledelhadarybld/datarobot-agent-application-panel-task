@@ -66,7 +66,6 @@ export function ChatSidebar({
     <Sidebar className="sidebar">
       <SidebarContent>
         <SidebarGroup>
-          {/* <div className="flex items-center justify-between px-2 py-1"> */}
           <SidebarMenuItem key="open-settings" className="flex-1">
             <SidebarMenuButton disabled={isLoading} asChild onClick={goToSettings}>
               <div>
@@ -89,7 +88,6 @@ export function ChatSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
 
-          {/* </div> */}
           <SidebarGroupLabel>Chats</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu id="sidebar-chats">
