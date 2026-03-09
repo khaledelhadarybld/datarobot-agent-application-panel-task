@@ -95,12 +95,7 @@ function addResultToToolInvocation(
   historyMessage: MessageHistoryResponse,
   uiMessages: MessageResponse[]
 ): boolean {
-  if (
-    historyMessage.role === 'tool' &&
-    !historyMessage.toolCalls &&
-    historyMessage.content &&
-    historyMessage.id?.startsWith?.('call_')
-  ) {
+  if (historyMessage.role === 'tool' && !historyMessage.toolCalls && historyMessage.content) {
     return uiMessages.some((m: MessageResponse) => {
       const toolPart = getToolPart(m, historyMessage.id);
       if (toolPart) {

@@ -1,8 +1,8 @@
-# Deployment Information Tools for Building Prediction Datasets
+# Deployment information tools for building prediction datasets
 
 The Deployments MCP Server provides several tools to help AI agents understand deployment data requirements and build prediction datasets on the fly. These tools are essential for the use cases described in the tech spec where agents need to dynamically create prediction data.
 
-## Tools Overview
+## Tools overview
 
 ### 1. `get_deployment_features`
 **Purpose**: Get comprehensive information about the features required by a deployment.
@@ -71,7 +71,7 @@ The Deployments MCP Server provides several tools to help AI agents understand d
 
 **Example Use Case**: Before making predictions, agent validates the generated data to ensure it will work.
 
-## Example Agent Workflow
+## Example agent workflow
 
 Here's how an agent might use these tools to handle a user request:
 
@@ -108,7 +108,7 @@ Here's how an agent might use these tools to handle a user request:
    predict_realtime(deployment_id="sales_forecast_deployment", file_path="prediction_data.csv", forecast_point="2024-06-01")
    ```
 
-## Benefits for AI Agents
+## Benefits for AI agents
 
 1. **Self-documenting**: Agents can discover what data is needed without external documentation
 2. **Type safety**: Feature type information prevents data type errors

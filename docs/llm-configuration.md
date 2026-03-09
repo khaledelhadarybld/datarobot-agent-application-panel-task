@@ -3,10 +3,10 @@
 This template supports multiple LLM options, including:
 
 - LLM Gateway (default)
-- Already Deployed Text Generation model in DataRobot
+- An already deployed text generation model in DataRobot
 - LLM Blueprint with an External LLM provider
 
-## LLM configuration recommended option
+## Recommended option
 
 You can edit the LLM configuration by manually changing which configuration is active.
 Simply run:
@@ -17,9 +17,9 @@ ln -sf ../configurations/<chosen_configuration> infra/infra/llm.py
 
 After doing so, you'll likely want to edit the `llm.py` file to select the correct model, particularly for non-LLM Gateway options.
 
-## LLM configuration alternative option
+## Alternative option
 
-If you want to configure it dynamically, you can set it as a configuration value in your `.env` file:
+To configure the LLM dynamically, you can set it as a configuration value in your `.env` file:
 
 ```sh
 INFRA_ENABLE_LLM=<chosen_configuration>

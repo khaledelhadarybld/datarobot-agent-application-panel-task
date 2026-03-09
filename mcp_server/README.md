@@ -1,10 +1,10 @@
 <p align="center">
-  <a href="https://github.com/datarobot/recipe-fastmcp-template">
+  <a href="https://github.com/datarobot-community/af-component-datarobot-mcp">
     <img src="./img/datarobot-logo.avif" width="600px" alt="DataRobot Logo"/>
   </a>
 </p>
 <p align="center">
-    <span style="font-size: 1.5em; font-weight: bold; display: block;">MCP Server Template for DataRobot</span>
+    <span style="font-size: 1.5em; font-weight: bold; display: block;">MCP server (DataRobot MCP AF Component)</span>
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
 
 <p align="center">
   <a href="./LICENSE.txt">
-    <img src="https://img.shields.io/github/license/datarobot/recipe-fastmcp-template" alt="License">
+    <img src="https://img.shields.io/github/license/datarobot-community/af-component-datarobot-mcp" alt="License">
   </a>
   <a href="https://github.com/jlowin/fastmcp">
     <img src="https://img.shields.io/badge/FastMCP-2.12.2+-blue" alt="FastMCP">
@@ -29,9 +29,9 @@
   </a>
 </p>
 
-This repository provides a production-ready template for building [FastMCP](https://github.com/jlowin/fastmcp) servers with DataRobot integration.
-Once configured, the template results in a complete framework for creating MCP Servers to be used by agents for calling tools, prompts, and resources.
-It can then be deployed as a DataRobot custom model application, enabling seamless integration with AI assistants like Cursor, Claude Desktop, and other MCP-compatible clients.
+This directory contains the MCP server from the [DataRobot MCP AF Component](https://github.com/datarobot-community/af-component-datarobot-mcp), a production-ready template for building [FastMCP](https://github.com/jlowin/fastmcp) servers with DataRobot integration.
+Once configured, it provides a complete framework for creating MCP servers for agents to call tools, prompts, and resources.
+It can be deployed as a DataRobot custom model application, enabling integration with AI assistants like Cursor, Claude Desktop, and other MCP-compatible clients.
 
 The template includes pre-built tools for common DataRobot operations, a structured approach for adding custom tools, automated deployment infrastructure, and production-ready features like OpenTelemetry tracing and dynamic tool registration.
 
@@ -126,21 +126,27 @@ git config --global core.symlink true
 ## Optional
 
 - [**Docker**](https://docs.docker.com/engine/install/): For containerized deployment
-- [**AWS Credentials**](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html): If using AWS-related features (S3 predictions or memory.)
+- [**AWS Credentials**](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html): If using AWS-related features (S3 predictions or memory).
 - [**Node.js**](https://nodejs.org/en/download/): Required for Claude Desktop MCP client setup
 
 # Get started
 
-## Clone the repository
+In the Agentic Starter, the MCP server is included via the [DataRobot MCP AF Component](https://github.com/datarobot-community/af-component-datarobot-mcp).
+If you have this repository from `dr start` or a clone of `recipe-datarobot-agent-application`, the `mcp_server/` directory is already present; you do not need to clone a separate MCP repository.
 
-```bash
-git clone https://github.com/datarobot-community/datarobot-mcp-template.git
-cd datarobot-mcp-template
-```
+To add or update the MCP component in a project that uses the DataRobot App Framework, see the [af-component-datarobot-mcp README](https://github.com/datarobot-community/af-component-datarobot-mcp#getting-started) (base component and `uvx copier copy` / `uvx copier update`).
 
 ## Install dependencies
 
 > **NOTE**: This installs dependencies for both the MCP application and infrastructure components.
+
+From the **project root** (recommended when working in the full application template):
+
+```bash
+dr run install
+```
+
+Or from the `mcp_server/` directory only:
 
 ```bash
 task install
@@ -148,9 +154,10 @@ task install
 
 ## Configure environment variables
 
-Create a `.env` file in the `mcp_server/` directory:
+Create or edit a `.env` file. When using the full application template, use the **project root** `.env` (e.g. via `dr dotenv setup` or `dr dotenv edit`). For MCP-only development, create a `.env` file in the `mcp_server/` directory:
 
 ```bash
+# For MCP-only development (from repo root):
 cd mcp_server
 vim .env # or your preferred editor
 ```
@@ -206,7 +213,7 @@ Open the DataRobot UI to locate and copy your DataRobot API key and endpoint to 
 
   <img src="./img/api-key.png" width="400" />
 
-### Generate Session Secret Key (for DataRobot Codespaces)
+### Generate session secret key (for DataRobot Codespaces)
 
 1. Generate a session secret key with Python.
 `python -c "import os, binascii; print(binascii.hexlify(os.urandom(64)).decode('utf-8'))"`
@@ -215,13 +222,21 @@ Open the DataRobot UI to locate and copy your DataRobot API key and endpoint to 
 
 ## Run locally
 
-From `/mcp_server/`, start the server locally using the `task dev` command:
+**When using the full application template**, start all services (including the MCP server) from the project root:
+
+```bash
+dr run dev
+```
+
+The MCP server will use the development port configured for the template (e.g. 9000). See the main [README](../README.md) and [Ports reference](../README.md#ports-reference).
+
+**When running the MCP server alone** from the `mcp_server/` directory:
 
 ```bash
 task dev
 ```
 
-The server will start on `http://localhost:8080` with the MCP endpoint at `http://localhost:8080/mcp/`.
+The server will start on `http://localhost:8080` (or the value of `MCP_SERVER_PORT`) with the MCP endpoint at `http://localhost:8080/mcp/`.
 Once the DataRobot logo appears, the server is running properly.
 
 <img src="./img/mcp-logo.png" width="300" />
@@ -278,6 +293,10 @@ Common debugging steps:
 # Deployment
 
 Now that the local test passed, you can deploy the server to DataRobot.
+
+**When using the full application template**, deploy from the **project root** with `dr run deploy` (or `task deploy`). Use the root `.env` (e.g. `dr dotenv`); do not copy `mcp_server/.env` to root for deployment—the root environment is already used.
+
+**When deploying the MCP server alone** (standalone use), follow the steps below.
 
 **What gets deployed**
 
@@ -362,6 +381,21 @@ Use the `MCP_SERVER_MCP_ENDPOINT` URL (shown in the **outputs** section in the s
 - Read more about [dynamic tool registration](/docs/dynamic_tool_registration.md) for instructions on automatically registering tools with the server.
 
 # Advanced options
+
+## Updating the MCP component
+
+This MCP server is the [DataRobot MCP AF Component](https://github.com/datarobot-community/af-component-datarobot-mcp). To update it to a newer version:
+
+```bash
+# From project root
+uvx copier update -a .datarobot/answers/drmcp-mcp_server.yml -A
+```
+
+To update all App Framework components in the project:
+
+```bash
+uvx copier update -a .datarobot/answers/* -A
+```
 
 ## MCP target type configuration
 
@@ -483,7 +517,7 @@ If you encounter issues or have questions:
 - **FastMCP Documentation**: [GitHub Repository](https://github.com/jlowin/fastmcp)
 - **MCP Protocol**: [Model Context Protocol Specification](https://modelcontextprotocol.io/)
 - **DataRobot Support**: [Contact Support](https://docs.datarobot.com/en/docs/get-started/troubleshooting/general-help.html)
-- **Open an Issue**: [GitHub Issues](https://github.com/datarobot/recipe-fastmcp-template/issues)
+- **Open an Issue**: [GitHub Issues](https://github.com/datarobot-community/af-component-datarobot-mcp/issues)
 - **Security Issues**: Email oss-community-management@datarobot.com
 
 # Contributions

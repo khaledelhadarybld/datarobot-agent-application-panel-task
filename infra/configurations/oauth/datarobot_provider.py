@@ -60,7 +60,7 @@ if google_client_id and google_client_secret:
         type="google",
         client_id=google_client_id,
         client_secret=google_client_secret,
-        name=f"[{PROJECT_NAME}] Agentic Starter Application Template Google Client",
+        name=f"[{PROJECT_NAME}] Agentic Starter Google Client",
     )
     pulumi.export("Google OAuth Provider ID", google_oauth.id)
     provider_ids.append(google_oauth.id)
@@ -74,7 +74,7 @@ if box_client_id and box_client_secret:
         type="box",
         client_id=box_client_id,
         client_secret=box_client_secret,
-        name=f"[{PROJECT_NAME}] Agentic Starter Application Template Box Client",
+        name=f"[{PROJECT_NAME}] Agentic Starter Box Client",
     )
 
     pulumi.export("Box OAuth Provider ID", box_oauth.id)
@@ -91,7 +91,7 @@ if microsoft_client_id and microsoft_client_secret:
         type="microsoft",
         client_id=microsoft_client_id,
         client_secret=microsoft_client_secret,
-        name=f"[{PROJECT_NAME}] Agentic Starter Application Template Microsoft Client",
+        name=f"[{PROJECT_NAME}] Agentic Starter Microsoft Client",
     )
     pulumi.export("Microsoft OAuth Provider ID", microsoft_oauth.id)
     provider_ids.append(microsoft_oauth.id)

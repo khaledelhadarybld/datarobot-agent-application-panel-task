@@ -11,7 +11,7 @@ These instructions apply to all agents working in this repository.
 Run the following shell commands to run the project locally
 
 ```shell
-dr task run dev
+dr run dev
 ```
 
 # Agent Development Instructions

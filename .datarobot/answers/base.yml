@@ -10,4 +10,4 @@ oss_repo_name: datarobot-agent-application
 private_repo_name: recipe-datarobot-agent-application
 template_code_name: agentic-application-starter
 template_description: This application is a template for Generative AI agentic solutions
-template_name: Agentic Application Starter
+template_name: Agentic Starter

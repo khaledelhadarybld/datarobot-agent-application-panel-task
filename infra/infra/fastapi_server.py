@@ -205,12 +205,12 @@ session_secret_cred = pulumi_datarobot.ApiTokenCredential(
 fastapi_server_app_env_name: str = "DATAROBOT_APPLICATION_ID"
 fastapi_server_application_path = project_dir.parent / "fastapi_server"
 
+fastapi_server_app_resource_name: str = f"Agentic Application Starter [{PROJECT_NAME}]"
 fastapi_server_app_source_args = ApplicationSourceArgs(
-    resource_name=f"Agentic Application Starter [{PROJECT_NAME}]",
+    resource_name=fastapi_server_app_resource_name,
     base_environment_id=RuntimeEnvironments.PYTHON_312_APPLICATION_BASE.value.id,
 ).model_dump(mode="json", exclude_none=True)
 
-fastapi_server_app_resource_name: str = f"Agentic Application Starter [{PROJECT_NAME}]"
 fastapi_server_app_runtime_parameters: list[
     pulumi_datarobot.ApplicationSourceRuntimeParameterValueArgs
 ] = (
@@ -258,7 +258,7 @@ fastapi_server_app = pulumi_datarobot.CustomApplication(
 
 pulumi.export(fastapi_server_app_env_name, fastapi_server_app.id)
 pulumi.export(
-    fastapi_server_app_resource_name,
+    f"Agentic Starter [{PROJECT_NAME}]",
     fastapi_server_app.application_url,
 )
 

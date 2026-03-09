@@ -1,8 +1,8 @@
-## Dynamic Tool Registration
+## Dynamic tool registration
 
 Turn DataRobot deployments into LLM tools automatically. The MCP server proxies tool calls to your deployments.
 
-### Quick Start
+### Quick start
 
 1. Deploy your model/service to DataRobot
 2. Tag deployment with `tool` (both name and value)
@@ -16,7 +16,7 @@ MCP_SERVER_REGISTER_DYNAMIC_TOOLS_ON_STARTUP=true
 
 ---
 
-## What Works Out of the Box
+## What works out of the box
 
 | Deployment Type                                                   | Configuration Needed                                                     |
 |-------------------------------------------------------------------|--------------------------------------------------------------------------|
@@ -31,7 +31,7 @@ MCP_SERVER_REGISTER_DYNAMIC_TOOLS_ON_STARTUP=true
 
 ---
 
-## Registration Requirements
+## Registration requirements
 
 **All deployments must:**
 - Be tagged with `tool` (both name and value)
@@ -58,18 +58,18 @@ To manage tool registrations at runtime, use the following endpoints:
 
 ---
 
-## DRUM Deployments
+## DRUM deployments
 
 [DataRobot DRUM](https://pypi.org/project/datarobot-drum/) deployments work with minimal configuration.
 
-### Zero Configuration (Most Cases)
+### Zero configuration (most cases)
 
 Deploy your model, tag as `tool`, and you're done:
 - **Structured predictions** (binary, regression, multiclass, etc.): Auto-configured
 - **Agentic workflows**: Auto-configured
 - **DataRobot native models**: Auto-configured
 
-### Unstructured Models (Configuration Required)
+### Unstructured models (configuration required)
 
 For `unstructured` target type, add `inputSchema` to `model-metadata.yaml`:
 
@@ -98,7 +98,7 @@ inputSchema:
     - All parameters must be under `json` property for unstructured models (see Input Schema Reference below).
     - Exposing input schemas as metadata from `model-metadata.yaml` is supported in `datarobot-drum` version 1.17.2 and later.
 
-### Custom Schema (Optional)
+### Custom schema (optional)
 
 Override fallback schemas for better LLM guidance and more control over request structure:
 
@@ -115,11 +115,11 @@ inputSchema:
 
 ---
 
-## Custom Servers
+## Custom servers
 
 For FastAPI, Flask, or other frameworks, expose an `/info/` endpoint with metadata.
 
-### Required `/info/` Response
+### Required `/info/` response
 
 ```json
 {
@@ -129,7 +129,7 @@ For FastAPI, Flask, or other frameworks, expose an `/info/` endpoint with metada
 }
 ```
 
-### FastAPI Example
+### FastAPI example
 
 ```python
 from fastapi import FastAPI
@@ -161,7 +161,7 @@ async def get_weather(city: str, units: str = "metric"):
     return {"city": city, "temp": 22, "units": units}
 ```
 
-### How the Weather Tool Works
+### How the weather tool works
 
 **LLM calls the tool:**
 ```json
@@ -182,9 +182,9 @@ Notes:
 
 ---
 
-## Input Schema Reference
+## Input schema reference
 
-### Parameter Groups
+### Parameter groups
 
 The weather example above demonstrates how parameters map to HTTP requests:
 
@@ -202,7 +202,7 @@ The weather example above demonstrates how parameters map to HTTP requests:
 - All `{param}` in endpoint must exist in `path_params`
 - Empty schemas allowed with: `MCP_SERVER_TOOL_REGISTRATION_ALLOW_EMPTY_SCHEMA=true`
 
-### Under the Hood
+### Under the hood
 
 When an LLM calls the weather tool, the MCP server transforms it into an HTTP request:
 
@@ -226,7 +226,7 @@ async with session.request(
 
 ## Troubleshooting
 
-### Tool Not Registering
+### Tool not registering
 
 ```bash
 # Check deployment is active and tagged
@@ -239,7 +239,7 @@ curl -H "Authorization: Bearer $DATAROBOT_API_TOKEN" \
 
 ```
 
-### Common Errors
+### Common errors
 
 | Error | Fix |
 |-------|-----|

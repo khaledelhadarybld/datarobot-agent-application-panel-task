@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+- Renamed `datarobot-agent-application` to Agentic Starter application template.
+- Bumped `agent` component from 11.6.20 to 11.6.23
+  - Upgraded `datarobot-genai[langgraph]` from 0.5.7 to 0.6.11
+    - All agents now emit AG-UI lifecycle events; removed raw string streaming code path
+    - Restructured tools from `drmcp.tools` to `drtools`
+    - Added MCP tool `deploy_custom_model` for deploying custom inference models to DataRobot MLOps
+  - Updated local run command from `dr task run dev` to `dr run dev`
+  - Minor Taskfile quoting and formatting improvements, propagated CLI exit code
+
+## 11.6.3
+-Updated `agent` component from 11.6.18 to 11.6.20:
+  - Update Moderations library to 11.2.20
+    - NaN bugfix for NeMo Evaluators
+    - Guideline adherence iterator update
+    - Otel metric support for streaming completions
+    - update llama-index-llms-langchain from 0.7.1 to 0.7.2
+
 
 ## 11.6.2
 - Added reasoning event types support to agentic playground
@@ -23,12 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Bumped up the datarobot-genai[drmcp] Sub Package (dependencies clean up)
 - Updated `dr-cli` minimum version to 0.2.50
 
-
 ## 11.6.1
-- Renamed facing name for `datarobot-agent-application` to Agentic Starter Application Template
-
+- Renamed `datarobot-agent-application` to Agentic Starter Application Template.
 - Theme changed to match corporate DataRobot design. This includes colors, fonts, paddings, and typography. Reusable shadcn components from `@dr-ui` registry are installed.
-
 - Inject full stored chat history into `RunAgentInput` so downstream agents receive conversation context
 - Bump agent component from 11.6.3 to 11.6.10
   - Migrate to new interface
@@ -45,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Force opentelemetry-semantic-conventions-ai==0.4.13 for incompatiblity with crewai==1.9.3
 
 ## 11.6.0
-- Pin `pyarrow==20.0.0` to avoid error in codespaces
+- Pin `pyarrow==20.0.0` to avoid an error in codespaces
 - Added support for alternative OAuth flow using Authlib
 - NAT 1.4, Langgraph 1.x, and llamaindex 0.14.x
 - New env var ENABLE_AGENT_HA_MODE to configure DRUM runtime params for agent custom model deployment HA concurrency with defaults

@@ -12,7 +12,15 @@
                 "lechuck.intellij-plugin.task"
             ],
             "backend": "pycharm"
-		}
+		},
+        "vscode": {
+            "extensions": [
+                "charliermarsh.ruff",
+                "eamodio.gitlens",
+                "task.vscode-tasks",
+                "ms-python.python"
+            ]
+        }
     },
     "forwardPorts": [51164, 8083, 8080, 8842, 5173, 9000],
     "mounts": [

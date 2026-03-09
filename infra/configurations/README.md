@@ -1,4 +1,4 @@
-# Infrastructure Configurations
+# Infrastructure configurations
 
 This folder is for alternative configurations for a given infrastructure component. This enables template customizers to look at the options for a given component and choose one either by directly
 symlinking their chosen option, or doing it a runtime via environment variables.

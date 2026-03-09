@@ -69,7 +69,7 @@ def add_oauth_provider(provider: ProviderConfig, parameters: list) -> None:
         pulumi.export(f"{provider.name} Client ID", client_id)
 
         client_secret_cred = datarobot.ApiTokenCredential(
-            f"[{PROJECT_NAME}] Agentic Starter Application Template {provider.name} Client",
+            f"[{PROJECT_NAME}] Agentic Starter {provider.name} Client",
             args=datarobot.ApiTokenCredentialArgs(
                 api_token=str(client_secret),
             ),

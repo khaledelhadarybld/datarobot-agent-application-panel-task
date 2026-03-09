@@ -1,4 +1,4 @@
-# Agentic Application Starter: React App frontend_web
+# Agentic Starter: React (frontend)
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
@@ -53,7 +53,6 @@ export default tseslint.config({
 })
 ```
 
-## Tech Stack
+## Tech stack
 
 - Vite for fast development and building
-

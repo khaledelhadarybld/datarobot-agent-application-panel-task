@@ -1,4 +1,4 @@
-# Feature Flag validation
+# Feature flag validation
 
 Put yaml files here with feature flags that are required. 
 

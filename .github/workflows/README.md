@@ -1,4 +1,4 @@
-### **GitHub Workflows**
+### **GitHub workflows**
 
 #### 📌 **Overview**
 

@@ -1,8 +1,8 @@
-# Development Guide
+# Development guide
 
 This guide provides comprehensive instructions for setting up, developing, and deploying the DataRobot MCP (Model Context Protocol) Server.
 
-## Table of Contents
+## Table of contents
 
 - [Prerequisites](#prerequisites)
 - [Initial Setup](#initial-setup)
@@ -24,7 +24,7 @@ Before you begin, ensure you have the following:
 - **DataRobot Account**: Active DataRobot account with API credentials
 - **Python 3.11+**: Required Python version
 
-## Initial Setup
+## Initial setup
 
 ### 1. Install uv
 
@@ -36,13 +36,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 For alternative installation methods, refer to the [uv documentation](https://github.com/astral-sh/uv).
 
-### 2. Configure Environment Variables
+### 2. Configure environment variables
 
 Create a `.env` file in the root directory. You can copy from `.env.template` located in the app directory.
 
 Then configure the following variables:
 
-#### Required Variables
+#### Required variables
 
 ```bash
 # DataRobot API credentials
@@ -50,7 +50,7 @@ DATAROBOT_API_TOKEN=your_api_token
 DATAROBOT_ENDPOINT=your_datarobot_endpoint
 ```
 
-#### Optional Variables
+#### Optional variables
 
 ```bash
 # MCP Server Configuration
@@ -75,9 +75,9 @@ DATAROBOT_ENDPOINT=your_datarobot_endpoint
 # OTEL_ENABLED_HTTP_INSTRUMENTORS=true
 ```
 
-## Running the Server
+## Running the server
 
-### Local Development
+### Local development
 
 To start the MCP server locally for development:
 
@@ -100,9 +100,9 @@ task deploy
 
 This will build and deploy the server as a DataRobot custom model application.
 
-## Development Workflow
+## Development workflow
 
-### MCP Client Configuration
+### MCP client configuration
 
 To use the MCP server with AI assistants, configure your MCP client to connect to the server.
 
@@ -178,7 +178,7 @@ brew install node
 
 For more detailed client setup instructions, see the [MCP Client Setup Guide](docs/mcp_client_setup.md).
 
-### OpenTelemetry Configuration
+### OpenTelemetry configuration
 
 The server supports OpenTelemetry for distributed tracing and observability.
 
@@ -200,7 +200,7 @@ OTEL_ENABLED=true
 OTEL_ENABLED_HTTP_INSTRUMENTORS=false
 ```
 
-### Dynamic Tool Registration
+### Dynamic tool registration
 
 The server can automatically discover and register DataRobot deployments as MCP tools.
 
@@ -221,7 +221,7 @@ MCP_SERVER_TOOL_REGISTRATION_ALLOW_EMPTY_SCHEMA=true
 MCP_SERVER_TOOL_REGISTRATION_DUPLICATE_BEHAVIOR=warn
 ```
 
-### Dynamic Prompt Registration
+### Dynamic prompt registration
 
 The server can automatically discover and register DataRobot prompts as MCP prompts.
 
@@ -235,7 +235,7 @@ MCP_SERVER_REGISTER_DYNAMIC_PROMPTS_ON_STARTUP=true
 MCP_SERVER_PROMPT_REGISTRATION_DUPLICATE_BEHAVIOR=warn
 ```
 
-## Code Quality
+## Code quality
 
 Maintain code quality by running linting and formatting checks:
 
@@ -273,21 +273,21 @@ uv run pytest -v
 
 ## Debugging
 
-### Viewing Logs
+### Viewing logs
 
 Monitor the MCP server logs to debug issues:
 
 - **Local Development**: Logs are output to the console where you ran `task dev`
 - **Deployed Server**: Check the DataRobot deployment logs in the DataRobot UI
 
-### Common Issues
+### Common issues
 
 1. **Connection Errors**: Verify the server is running and the URL is correct
 2. **Authentication Failures**: Check that your `DATAROBOT_API_TOKEN` is valid
 3. **Tool Registration Issues**: Review the server logs for registration errors
 4. **Port Conflicts**: Ensure the configured port (default: 8080) is available
 
-### Debug Mode
+### Debug mode
 
 Enable debug logging by setting:
 

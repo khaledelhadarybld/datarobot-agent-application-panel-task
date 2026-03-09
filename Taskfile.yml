@@ -3,6 +3,7 @@
 version: '3'
 env:
   ENV: testing
+  PYTHONWARNINGS: "ignore"
 dotenv: ['.env', '.env.{{.ENV}}']
 
 includes:
@@ -42,7 +43,7 @@ tasks:
       - "echo '✨ Choose your agentic framework.'"
       - |
         PYTHONWARNINGS=ignore uvx copier recopy -a .datarobot/answers/agent-agent.yml \
-        -r 11.6.18 \
+        -r 11.6.23 \
         --data base_answers_file=.datarobot/answers/base.yml \
         --data agent_app_name=agent \
         --data agent_development_port=8842 \

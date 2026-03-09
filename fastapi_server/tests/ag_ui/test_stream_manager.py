@@ -13,12 +13,18 @@
 # limitations under the License.
 
 from typing import AsyncGenerator
+from unittest.mock import MagicMock
+from uuid import UUID
 
 import pytest
 from ag_ui.core import BaseEvent, RunAgentInput, RunFinishedEvent, RunStartedEvent
 
 from app.ag_ui.base import AGUIAgent
-from app.ag_ui.stream_manager import AGUIStreamManager
+from app.ag_ui.dr import DataRobotAGUIAgent
+from app.ag_ui.nat import NATAGUIAgent
+from app.ag_ui.storage import AGUIAgentWithStorage
+from app.ag_ui.stream_manager import AGUIStreamManager, create_storage_dr_agent
+from app.config import Config
 
 
 class StubAgent(AGUIAgent):
@@ -68,3 +74,30 @@ async def test_returns_output(
         actual.append(event)
 
     assert actual == events
+
+
+def test_create_storage_dr_agent_uses_dr_agent(config: Config) -> None:
+    agent = create_storage_dr_agent(
+        name="test",
+        chat_repo=MagicMock(),
+        message_repo=MagicMock(),
+        config=config,
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        headers={},
+    )
+    assert isinstance(agent, AGUIAgentWithStorage)
+    assert isinstance(agent._inner, DataRobotAGUIAgent)
+
+
+def test_create_storage_dr_agent_uses_nat_agent(config: Config) -> None:
+    config = config.model_copy(update={"enable_nat_server": True})
+    agent = create_storage_dr_agent(
+        name="test",
+        chat_repo=MagicMock(),
+        message_repo=MagicMock(),
+        config=config,
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        headers={},
+    )
+    assert isinstance(agent, AGUIAgentWithStorage)
+    assert isinstance(agent._inner, NATAGUIAgent)

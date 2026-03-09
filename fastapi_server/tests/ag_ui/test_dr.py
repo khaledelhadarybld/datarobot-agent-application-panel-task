@@ -22,7 +22,6 @@ from ag_ui.core import (
     BaseEvent,
     CustomEvent,
     Message,
-    RunAgentInput,
     RunErrorEvent,
     RunFinishedEvent,
     RunStartedEvent,
@@ -41,6 +40,7 @@ from openai.types.chat.chat_completion_chunk import (
 
 from app.ag_ui.dr import DataRobotAGUIAgent
 from app.config import Config
+from tests.ag_ui.conftest import run_input
 
 
 @pytest.fixture(scope="function")
@@ -120,9 +120,7 @@ def error_completions(
     return set
 
 
-@pytest.fixture
-def name() -> Iterator[str]:
-    yield "Test Agent"
+_TEST_AGENT_NAME = "Test Agent"
 
 
 @pytest.fixture
@@ -136,24 +134,14 @@ def url() -> Iterator[str]:
 
 
 @pytest.fixture
-def dr_agui_agent(name: str, config: Config) -> Iterator[DataRobotAGUIAgent]:
-    yield DataRobotAGUIAgent(name, config)
+def dr_agui_agent(config: Config) -> Iterator[DataRobotAGUIAgent]:
+    yield DataRobotAGUIAgent(_TEST_AGENT_NAME, config)
 
 
 @pytest.fixture
-def dr_agui_agent_heartbeat(name: str, config: Config) -> Iterator[DataRobotAGUIAgent]:
-    yield DataRobotAGUIAgent(name, config, heartbeat_interval=0.1, check_interval=0.02)
-
-
-def run_input(*messages: Message) -> RunAgentInput:
-    return RunAgentInput(
-        thread_id="thread",
-        run_id="run",
-        state=None,
-        messages=list(messages),
-        tools=[],
-        context=[],
-        forwarded_props=None,
+def dr_agui_agent_heartbeat(config: Config) -> Iterator[DataRobotAGUIAgent]:
+    yield DataRobotAGUIAgent(
+        _TEST_AGENT_NAME, config, heartbeat_interval=0.1, check_interval=0.02
     )
 
 
