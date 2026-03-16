@@ -3,6 +3,8 @@ import { v4 as uuid } from 'uuid';
 import type { ChatListItem } from '@/api/chat/types';
 import { useDeleteChat, useFetchChats } from '@/api/chat';
 import { useAddChat, useHasChat } from '@/hooks/use-chats-state.ts';
+import { queryClient } from '@/lib/query-client.ts';
+import { chatsKeys } from '@/api/chat/keys.ts';
 
 export type UseChatListParams = {
   chatId: string;
@@ -19,7 +21,7 @@ export function useChatList({ chatId, setChatId, showStartChat = false }: UseCha
   const hasChat = useHasChat(chatId);
 
   const addChatToState = useAddChat();
-  const { mutateAsync: deleteChatMutation, isPending: isLoadingDeleteChat } = useDeleteChat();
+  const { mutateAsync: deleteChatMutation, isPending: isDeletingChat } = useDeleteChat();
   const { data: chats, isLoading: isLoadingChats, refetch } = useFetchChats();
 
   useEffect(() => {
@@ -48,8 +50,8 @@ export function useChatList({ chatId, setChatId, showStartChat = false }: UseCha
     return newChat ? [newChat, ...(chats || [])] : chats;
   }, [chats, newChat]);
 
-  const refetchChats = (): Promise<any> => {
-    return newChatRef.current ? refetch() : Promise.resolve();
+  const refetchChats = (): void => {
+    queryClient.invalidateQueries({ queryKey: chatsKeys.list });
   };
 
   /**
@@ -71,17 +73,6 @@ export function useChatList({ chatId, setChatId, showStartChat = false }: UseCha
   const deleteChat = (chatId: string) => {
     return deleteChatMutation({ chatId }).then(() => refetch());
   };
-
-  useEffect(() => {
-    if (isLoadingChats || !chats || chats?.find(c => c.id === chatId)) {
-      return;
-    }
-    if (!chats.length) {
-      addChatHandler();
-    } else {
-      setChatId(chats[0].id);
-    }
-  }, [chats, isLoadingChats]);
 
   function addChatHandler() {
     const newChatID = createChat('New');
@@ -108,7 +99,7 @@ export function useChatList({ chatId, setChatId, showStartChat = false }: UseCha
     isLoadingChats,
     refetchChats,
     deleteChat,
-    isLoadingDeleteChat,
+    isDeletingChat,
     addChatHandler,
     deleteChatHandler,
   };

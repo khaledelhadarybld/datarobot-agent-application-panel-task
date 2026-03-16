@@ -190,7 +190,7 @@ function ChatMessageContent({
 
   return (
     <div
-      className={cn('flex gap-3 p-4 rounded-lg', role === 'user' ? 'bg-muted/50' : 'bg-card')}
+      className={cn('flex gap-3 p-4 rounded-lg', isUser ? 'bg-card' : '')}
       data-message-id={id}
       data-thread-id={threadId}
       data-resource-id={resourceId}
@@ -200,7 +200,7 @@ function ChatMessageContent({
         <div
           className={cn(
             'w-8 h-8 rounded-full flex items-center justify-center',
-            role === 'user'
+            isUser
               ? 'bg-primary text-primary-foreground'
               : role === 'assistant'
                 ? 'bg-secondary text-secondary-foreground'
@@ -216,7 +216,7 @@ function ChatMessageContent({
         <div className="flex items-center gap-2 mb-1">
           <span className="mn-label capitalize">{role}</span>
         </div>
-        <div className="body whitespace-pre-wrap break-words text-wrap [line-break:anywhere]">
+        <div className="body break-words text-wrap [line-break:anywhere] overflow-hidden">
           {content.parts.map((part, i) => (
             <UniversalContentPart key={i} part={part} />
           ))}

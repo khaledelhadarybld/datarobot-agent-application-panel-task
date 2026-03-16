@@ -46,8 +46,8 @@ class DRAgentEventResponse(BaseModel):
     events: List[Event] = []
 
 
-class NATAGUIAgent(AGUIAgent):
-    """AG-UI agent that uses the NAT server's /generate/stream endpoint."""
+class DRAgentAGUIAgent(AGUIAgent):
+    """AG-UI agent that uses the DRAgent server's /generate/stream endpoint."""
 
     def __init__(
         self,
@@ -91,7 +91,7 @@ class NATAGUIAgent(AGUIAgent):
         try:
             body = input.model_dump_json(by_alias=True)
 
-            logger.info("Sending request to NAT server's /generate/stream endpoint")
+            logger.info("Sending request to DRAgent server's /generate/stream endpoint")
 
             events_yielded = False
             async with httpx.AsyncClient(
@@ -107,7 +107,7 @@ class NATAGUIAgent(AGUIAgent):
                     if event_source.response.status_code >= 400:
                         error_body = await event_source.response.aread()
                         yield RunErrorEvent(
-                            message=f"NAT server returned error {event_source.response.status_code}: {error_body.decode()}",
+                            message=f"DRAgent server returned error {event_source.response.status_code}: {error_body.decode()}",
                             thread_id=input.thread_id,
                             run_id=input.run_id,
                         )
@@ -121,7 +121,7 @@ class NATAGUIAgent(AGUIAgent):
                         ]
                         response = DRAgentEventResponse.model_validate(raw)
                         for event in response.events:
-                            # Filter out RunStartedEvent/RunFinishedEvent from the NAT server
+                            # Filter out RunStartedEvent/RunFinishedEvent from the DRAgent server
                             # since they have empty run_id/thread_id, and we emit our own.
                             if isinstance(event, (RunStartedEvent, RunFinishedEvent)):
                                 continue
@@ -133,13 +133,13 @@ class NATAGUIAgent(AGUIAgent):
 
             if not events_yielded:
                 raise RuntimeError(
-                    "No events received from the NAT server. Please check if the server is running."
+                    "No events received from the DRAgent server. Please check if the server is running."
                 )
 
             yield RunFinishedEvent(thread_id=input.thread_id, run_id=input.run_id)
 
         except Exception as e:
-            logger.exception("Error during NAT agent run")
+            logger.exception("Error during DRAgent agent run")
             yield RunErrorEvent(
                 message=str(e), thread_id=input.thread_id, run_id=input.run_id
             )

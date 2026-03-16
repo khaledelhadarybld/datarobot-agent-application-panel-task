@@ -1,20 +1,23 @@
-import React, { useEffect, useState } from 'react';
-import { ChatPage as ChatPageImplementation } from '@/components/page/ChatPage.tsx';
-import { useLocation } from 'react-router-dom';
+import React from 'react';
+import { useParams } from 'react-router-dom';
+import { ChatPageContent } from '@/components/page/ChatPage.tsx';
+import { useMainLayout } from '@/hooks/use-main-layout.ts';
 
 export const ChatPage: React.FC = () => {
-  const [chatId, setChatId] = useState<string>(() => window.location.hash?.substring(1));
-  const { hash } = useLocation();
-  useEffect(() => {
-    if (hash) {
-      setChatId(hash.substring(1));
-    }
-  }, [hash]);
+  const { chatId } = useParams<{ chatId: string }>();
+  const { hasChat, isNewChat, isLoadingChats, addChatHandler } = useMainLayout();
 
-  const setChatIdHandler = (id: string) => {
-    setChatId(id);
-    window.location.hash = id;
-  };
+  if (!chatId) {
+    return null;
+  }
 
-  return <ChatPageImplementation chatId={chatId} setChatId={setChatIdHandler} />;
+  return (
+    <ChatPageContent
+      chatId={chatId}
+      hasChat={hasChat}
+      isNewChat={isNewChat}
+      isLoadingChats={isLoadingChats}
+      addChatHandler={addChatHandler}
+    />
+  );
 };

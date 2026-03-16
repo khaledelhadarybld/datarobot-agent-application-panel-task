@@ -81,7 +81,7 @@ class Config(DataRobotAppFrameworkBaseSettings):
     # The number of characters to stream before persisting
     minimal_chunks_to_persist: int = 5000
 
-    enable_nat_server: bool = False
+    enable_dragent_server: bool = False
 
     application_id: str | None = None
 

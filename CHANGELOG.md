@@ -6,14 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## 11.6.4
 - Renamed `datarobot-agent-application` to Agentic Starter application template.
-- Bumped `agent` component from 11.6.20 to 11.6.23
-  - Upgraded `datarobot-genai[langgraph]` from 0.5.7 to 0.6.11
+- Bumped `agent` component from 11.6.20 to 11.6.30
+  - Upgraded `datarobot-genai` from 0.5.7 to 0.6.17
+    - Dropped `pydantic-ai-slim` dependency (CVE fix)
     - All agents now emit AG-UI lifecycle events; removed raw string streaming code path
     - Restructured tools from `drmcp.tools` to `drtools`
     - Added MCP tool `deploy_custom_model` for deploying custom inference models to DataRobot MLOps
-  - Updated local run command from `dr task run dev` to `dr run dev`
-  - Minor Taskfile quoting and formatting improvements, propagated CLI exit code
+  - Set agents to use the latest execution environment version to fix issues with pyarrow in Agentic Playground.
+  - Allowed forwarding all `x-datarobot-` headers to subcomponents
+  - [Feature in Development] `dragent` as a frontserver:
+    - Added register.py and workflow.yaml to all agent examples to support running agents with `dragent`
+    - Added environment variable `ENABLE_DRAGENT_SERVER` to enable running agent with `dragent` locally and in deployment (experimental option)
+- Updated `mcp_server` component from 0.0.13 to 0.0.15:
+  - Fixed loading JSON schemas from the package directory in DRUM adapter to work from wheel or source
+  - Fixed dynamic tool deployment registration to filter deployments with tool tag name and value using strict AND logic
+  - Fixed configuration parsing to correctly disable predictive tools when MCP_CLI_CONFIGS is empty
+  - Added always_prompt option to the MCP CLI config.
+- Improved App Settings page, changed UI routes for chats.
+- Fixed multi-turn conversations with tool calling.
 
 ## 11.6.3
 -Updated `agent` component from 11.6.18 to 11.6.20:

@@ -339,7 +339,7 @@ class TestMyAgentLangGraph:
                 mock_llm,
                 tools=ANY,
                 system_prompt=ANY,
-                name="Planner Agent",
+                name="planner_agent",
             )
 
     @patch("agent.myagent.create_agent")
@@ -352,7 +352,7 @@ class TestMyAgentLangGraph:
                 mock_llm,
                 tools=ANY,
                 system_prompt=ANY,
-                name="Writer Agent",
+                name="writer_agent",
             )
 
     def test_workflow_property(self, agent):

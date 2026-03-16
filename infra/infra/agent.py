@@ -65,6 +65,11 @@ DEFAULT_AGENT_REPLICAS: Final[int] = 2 if ENABLE_AGENT_HA_MODE else 1
 DEFAULT_AGENT_DEPLOYMENT_MIN_COMPUTES: Final[int] = 0
 DEFAULT_AGENT_DEPLOYMENT_MAX_COMPUTES: Final[int] = 4 if ENABLE_AGENT_HA_MODE else 2
 
+# dragent frontserver environment flag
+enable_dragent_server_bool = (
+    os.environ.get("ENABLE_DRAGENT_SERVER", "").strip().lower() == "true"
+)
+
 EXCLUDE_PATTERNS = [
     re.compile(pattern)
     for pattern in [
@@ -452,15 +457,6 @@ agent_runtime_parameter_values.extend(
     ]
 )
 
-if memory_space_id := os.environ.get("MEMORY_SPACE_ID"):
-    agent_runtime_parameter_values.append(
-        pulumi_datarobot.CustomModelRuntimeParameterValueArgs(
-            key="MEMORY_SPACE_ID",
-            type="string",
-            value=memory_space_id,
-        ),
-    )
-
 # Handle session secret key credential
 SESSION_SECRET_KEY: Final[str] = "SESSION_SECRET_KEY"
 
@@ -477,6 +473,16 @@ if session_secret_key := os.environ.get(SESSION_SECRET_KEY):
             value=session_secret_cred.id,
         ),
     )
+
+if enable_dragent_server_bool:
+    enable_dragent_server_runtime_param = (
+        pulumi_datarobot.CustomModelRuntimeParameterValueArgs(
+            key="ENABLE_DRAGENT_SERVER",
+            type="boolean",
+            value="true",
+        )
+    )
+    agent_runtime_parameter_values.append(enable_dragent_server_runtime_param)
 
 agent_custom_model_files = get_custom_model_files(
     custom_model_folder=str(agent_application_path),
@@ -599,7 +605,11 @@ if os.environ.get("AGENT_DEPLOY") != "0":
 
     agent_agent_deployment_id = agent_agent_deployment.id.apply(lambda id: f"{id}")
     agent_deployment_endpoint = agent_agent_deployment.id.apply(
-        lambda id: f"{os.getenv('DATAROBOT_ENDPOINT')}/deployments/{id}"
+        lambda id: (
+            f"{os.getenv('DATAROBOT_ENDPOINT')}/deployments/{id}/directAccess"
+            if enable_dragent_server_bool
+            else f"{os.getenv('DATAROBOT_ENDPOINT')}/deployments/{id}"
+        )
     )
     agent_deployment_completions_endpoint = agent_agent_deployment.id.apply(
         lambda id: (
@@ -628,3 +638,11 @@ agent_app_runtime_parameters = [
         value=agent_deployment_endpoint,
     ),
 ]
+if enable_dragent_server_bool:
+    agent_app_runtime_parameters.append(
+        pulumi_datarobot.ApplicationSourceRuntimeParameterValueArgs(
+            key="ENABLE_DRAGENT_SERVER",
+            type="boolean",
+            value="true",
+        ),
+    )

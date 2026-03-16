@@ -236,12 +236,70 @@ class DataRobotAGUIAgent(AGUIAgent):
     def _prepare_chat_completions_input(self, input: RunAgentInput) -> Dict[str, Any]:
         messages = []
         for input_message in input.messages:
-            messages.append(
-                {
-                    "role": input_message.role,
-                    "content": input_message.content,
-                }
-            )
+            msg: Dict[str, Any] = {
+                "role": input_message.role,
+                "content": input_message.content,
+            }
+
+            if input_message.role == "assistant":
+                # OpenAI-compatible APIs require tool_calls on assistant messages so that
+                # subsequent tool messages (with tool_call_id) can be correlated.
+                raw_tool_calls = getattr(input_message, "tool_calls", None)
+                if raw_tool_calls:
+                    tool_calls_payload = []
+                    for tc in raw_tool_calls:
+                        raw_id = (
+                            tc.get("id")
+                            if isinstance(tc, dict)
+                            else getattr(tc, "id", None)
+                        )
+                        id_str = str(raw_id).strip() if raw_id is not None else ""
+                        if not id_str or id_str == "None":
+                            raise ValueError(
+                                "Assistant tool_calls must have a non-empty id so "
+                                "tool messages can be correlated; got missing or None id."
+                            )
+                        tc_id = raw_id
+                        if isinstance(tc, dict):
+                            fn = tc.get("function") or {}
+                            tool_calls_payload.append(
+                                {
+                                    "id": str(tc_id),
+                                    "type": "function",
+                                    "function": {
+                                        "name": fn.get("name", ""),
+                                        "arguments": fn.get("arguments", ""),
+                                    },
+                                }
+                            )
+                        else:
+                            fn = getattr(tc, "function", None)
+                            tool_calls_payload.append(
+                                {
+                                    "id": str(tc_id),
+                                    "type": "function",
+                                    "function": {
+                                        "name": getattr(fn, "name", "") if fn else "",
+                                        "arguments": (
+                                            getattr(fn, "arguments", "") or ""
+                                        )
+                                        if fn
+                                        else "",
+                                    },
+                                }
+                            )
+                    msg["tool_calls"] = tool_calls_payload
+
+            elif input_message.role == "tool":
+                tool_call_id = getattr(input_message, "tool_call_id", None) or getattr(
+                    input_message, "id", None
+                )
+                if tool_call_id is not None:
+                    msg["tool_call_id"] = str(tool_call_id)
+                err = getattr(input_message, "error", None)
+                if err is not None:
+                    msg["error"] = str(err)
+            messages.append(msg)
         return {
             "messages": messages,
             "model": "unknown",

@@ -1,4 +1,5 @@
 @import '@fontsource/inter/index.css';
+@import '@fontsource/inter/600.css';
 @import '@fontsource/roboto-mono/400.css';
 
 @config './tailwind.config.ts';
@@ -153,9 +154,11 @@
     @apply bg-background text-foreground body;
     font-family: var(--font-serif);
   }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
   * {
     border-color: var(--border);
-    /* TODO do we ned this? */
-    /* @apply border-border outline-ring/50; */
   }
 }

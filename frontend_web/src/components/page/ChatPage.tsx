@@ -5,7 +5,6 @@ import { Skeleton } from '@/components/ui/skeleton.tsx';
 import { Chat, useChatScroll } from '@/components/Chat.tsx';
 import { useChatContext } from '@/hooks/use-chat-context.ts';
 import { useAgUiTool } from '@/hooks/use-ag-ui-tool.ts';
-import { useChatList } from '@/hooks/use-chat-list.ts';
 import { ChatMessages } from '@/components/ChatMessages.tsx';
 import { ChatProgress } from '@/components/ChatProgress.tsx';
 import { ChatTextInput } from '@/components/ChatTextInput.tsx';
@@ -15,7 +14,6 @@ import { StepEvent } from '@/components/StepEvent.tsx';
 import { ThinkingEvent } from '@/components/ThinkingEvent.tsx';
 import { ChatProvider } from '@/components/ChatProvider.tsx';
 import { StartNewChat } from '@/components/StartNewChat.tsx';
-import { ChatSidebar } from '@/components/ChatSidebar.tsx';
 import {
   isErrorStateEvent,
   isMessageStateEvent,
@@ -43,49 +41,31 @@ const initialMessages: MessageResponse[] = [
   },
 ];
 
-export function ChatPage({
-  chatId,
-  setChatId,
-}: {
+export interface ChatPageContentProps {
   chatId: string;
-  setChatId: (id: string) => void;
-}) {
-  const {
-    hasChat,
-    isNewChat,
-    chats,
-    isLoadingChats,
-    addChatHandler,
-    deleteChatHandler,
-    isLoadingDeleteChat,
-  } = useChatList({
-    chatId,
-    setChatId,
-    showStartChat: false,
-  });
+  hasChat: boolean;
+  isNewChat: boolean;
+  isLoadingChats: boolean;
+  addChatHandler: () => void;
+}
 
+export function ChatPageContent({
+  chatId,
+  hasChat,
+  isNewChat,
+  isLoadingChats,
+  addChatHandler,
+}: ChatPageContentProps) {
   return (
-    <div className="flex flex-row w-full h-svh">
-      <ChatSidebar
-        isLoading={isLoadingChats}
-        chatId={chatId}
-        chats={chats}
-        onChatCreate={addChatHandler}
-        onChatSelect={setChatId}
-        onChatDelete={deleteChatHandler}
-        isLoadingDeleteChat={isLoadingDeleteChat}
-      />
-
-      <Loading isLoading={isLoadingChats}>
-        {hasChat ? (
-          <ChatProvider chatId={chatId} runInBackground={true} isNewChat={isNewChat}>
-            <ChatImplementation chatId={chatId} />
-          </ChatProvider>
-        ) : (
-          <StartNewChat createChat={addChatHandler} />
-        )}
-      </Loading>
-    </div>
+    <Loading isLoading={isLoadingChats}>
+      {hasChat ? (
+        <ChatProvider chatId={chatId} runInBackground={true} isNewChat={isNewChat}>
+          <ChatImplementation chatId={chatId} />
+        </ChatProvider>
+      ) : (
+        <StartNewChat createChat={addChatHandler} />
+      )}
+    </Loading>
   );
 }
 

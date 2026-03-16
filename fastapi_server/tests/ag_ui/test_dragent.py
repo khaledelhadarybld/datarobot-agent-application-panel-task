@@ -31,26 +31,26 @@ from ag_ui.core import (
     ToolCallStartEvent,
 )
 
-from app.ag_ui.nat import DRAgentEventResponse, NATAGUIAgent
+from app.ag_ui.dragent import DRAgentAGUIAgent, DRAgentEventResponse
 from app.config import Config
 from tests.ag_ui.conftest import run_input
 
-_TEST_AGENT_NAME = "Test NAT Agent"
+_TEST_AGENT_NAME = "Test DRAgent Agent"
 
 
 @pytest.fixture
-def nat_agui_agent(config: Config) -> Iterator[NATAGUIAgent]:
-    yield NATAGUIAgent(_TEST_AGENT_NAME, config)
+def dragent_agui_agent(config: Config) -> Iterator[DRAgentAGUIAgent]:
+    yield DRAgentAGUIAgent(_TEST_AGENT_NAME, config)
 
 
 @pytest.fixture
-def nat_agui_agent_heartbeat(config: Config) -> Iterator[NATAGUIAgent]:
-    yield NATAGUIAgent(
+def dragent_agui_agent_heartbeat(config: Config) -> Iterator[DRAgentAGUIAgent]:
+    yield DRAgentAGUIAgent(
         _TEST_AGENT_NAME, config, heartbeat_interval=0.1, check_interval=0.02
     )
 
 
-async def run(agent: NATAGUIAgent, *messages: Message) -> list[BaseEvent]:
+async def run(agent: DRAgentAGUIAgent, *messages: Message) -> list[BaseEvent]:
     result = []
     async for event in agent.run(run_input(*messages)):
         result.append(event)
@@ -166,7 +166,7 @@ def error_sse(monkeypatch: pytest.MonkeyPatch) -> Callable[[BaseException], None
 
 async def test_run_single_message(
     set_sse_responses: Callable[[List[MockSSE]], None],
-    nat_agui_agent: NATAGUIAgent,
+    dragent_agui_agent: DRAgentAGUIAgent,
 ) -> None:
     msg_id = "msg-1"
     set_sse_responses(
@@ -181,7 +181,7 @@ async def test_run_single_message(
             )
         ]
     )
-    result = await run(nat_agui_agent)
+    result = await run(dragent_agui_agent)
     assert result == [
         RunStartedEvent(thread_id="thread", run_id="run"),
         TextMessageStartEvent(message_id=msg_id),
@@ -193,7 +193,7 @@ async def test_run_single_message(
 
 async def test_run_with_tool_calls(
     set_sse_responses: Callable[[List[MockSSE]], None],
-    nat_agui_agent: NATAGUIAgent,
+    dragent_agui_agent: DRAgentAGUIAgent,
 ) -> None:
     msg_id = "msg-1"
     tool_call_id = "tc-1"
@@ -214,7 +214,7 @@ async def test_run_with_tool_calls(
             )
         ]
     )
-    result = await run(nat_agui_agent)
+    result = await run(dragent_agui_agent)
     assert result == [
         RunStartedEvent(thread_id="thread", run_id="run"),
         TextMessageStartEvent(message_id=msg_id),
@@ -231,10 +231,10 @@ async def test_run_with_tool_calls(
 
 async def test_run_error(
     error_sse: Callable[[BaseException], None],
-    nat_agui_agent: NATAGUIAgent,
+    dragent_agui_agent: DRAgentAGUIAgent,
 ) -> None:
     error_sse(RuntimeError("connection failed"))
-    result = await run(nat_agui_agent)
+    result = await run(dragent_agui_agent)
     assert result == [
         RunStartedEvent(thread_id="thread", run_id="run"),
         RunErrorEvent(message="connection failed", thread_id="thread", run_id="run"),
@@ -243,14 +243,14 @@ async def test_run_error(
 
 async def test_run_http_error_status(
     set_sse_responses: Callable[[List[MockSSE], int], None],
-    nat_agui_agent: NATAGUIAgent,
+    dragent_agui_agent: DRAgentAGUIAgent,
 ) -> None:
     set_sse_responses([], 503)
-    result = await run(nat_agui_agent)
+    result = await run(dragent_agui_agent)
     assert result == [
         RunStartedEvent(thread_id="thread", run_id="run"),
         RunErrorEvent(
-            message="NAT server returned error 503: ",
+            message="DRAgent server returned error 503: ",
             thread_id="thread",
             run_id="run",
         ),
@@ -259,25 +259,25 @@ async def test_run_http_error_status(
 
 async def test_run_empty_response(
     set_sse_responses: Callable[[List[MockSSE]], None],
-    nat_agui_agent: NATAGUIAgent,
+    dragent_agui_agent: DRAgentAGUIAgent,
 ) -> None:
     set_sse_responses([])
-    result = await run(nat_agui_agent)
+    result = await run(dragent_agui_agent)
     assert result == [
         RunStartedEvent(thread_id="thread", run_id="run"),
         RunErrorEvent(
-            message="No events received from the NAT server. Please check if the server is running.",
+            message="No events received from the DRAgent server. Please check if the server is running.",
             thread_id="thread",
             run_id="run",
         ),
     ]
 
 
-async def test_run_filters_nat_run_started_and_finished_events(
+async def test_run_filters_dragent_run_started_and_finished_events(
     set_sse_responses: Callable[[List[MockSSE]], None],
-    nat_agui_agent: NATAGUIAgent,
+    dragent_agui_agent: DRAgentAGUIAgent,
 ) -> None:
-    """NAT server's RunStartedEvent/RunFinishedEvent must be suppressed; only our wrapper's should appear."""
+    """DRAgent server's RunStartedEvent/RunFinishedEvent must be suppressed; only our wrapper's should appear."""
     msg_id = "msg-1"
     set_sse_responses(
         [
@@ -292,7 +292,7 @@ async def test_run_filters_nat_run_started_and_finished_events(
             )
         ]
     )
-    result = await run(nat_agui_agent)
+    result = await run(dragent_agui_agent)
     # Exactly one RunStartedEvent and one RunFinishedEvent — our wrapper's
     assert result.count(RunStartedEvent(thread_id="thread", run_id="run")) == 1
     assert result.count(RunFinishedEvent(thread_id="thread", run_id="run")) == 1
@@ -303,7 +303,7 @@ async def test_run_filters_nat_run_started_and_finished_events(
 
 async def test_run_skips_empty_sse_data(
     set_sse_responses: Callable[[List[MockSSE]], None],
-    nat_agui_agent: NATAGUIAgent,
+    dragent_agui_agent: DRAgentAGUIAgent,
 ) -> None:
     """SSE frames with empty data must be skipped without error."""
     msg_id = "msg-1"
@@ -319,7 +319,7 @@ async def test_run_skips_empty_sse_data(
             ),
         ]
     )
-    result = await run(nat_agui_agent)
+    result = await run(dragent_agui_agent)
     assert result == [
         RunStartedEvent(thread_id="thread", run_id="run"),
         TextMessageStartEvent(message_id=msg_id),
@@ -331,7 +331,7 @@ async def test_run_skips_empty_sse_data(
 
 async def test_run_skips_sse_frame_with_no_events(
     set_sse_responses: Callable[[List[MockSSE]], None],
-    nat_agui_agent: NATAGUIAgent,
+    dragent_agui_agent: DRAgentAGUIAgent,
 ) -> None:
     """SSE frames with an empty or missing events list must not count as received events."""
     msg_id = "msg-1"
@@ -348,7 +348,7 @@ async def test_run_skips_sse_frame_with_no_events(
             ),
         ]
     )
-    result = await run(nat_agui_agent)
+    result = await run(dragent_agui_agent)
     assert result == [
         RunStartedEvent(thread_id="thread", run_id="run"),
         TextMessageStartEvent(message_id=msg_id),
@@ -360,15 +360,15 @@ async def test_run_skips_sse_frame_with_no_events(
 
 async def test_run_empty_response_only_empty_frames(
     set_sse_responses: Callable[[List[MockSSE]], None],
-    nat_agui_agent: NATAGUIAgent,
+    dragent_agui_agent: DRAgentAGUIAgent,
 ) -> None:
     """If all SSE frames have empty data/events, the agent should still raise a no-events error."""
     set_sse_responses([MockSSE(data=""), MockSSE(data='{"events": []}')])
-    result = await run(nat_agui_agent)
+    result = await run(dragent_agui_agent)
     assert result == [
         RunStartedEvent(thread_id="thread", run_id="run"),
         RunErrorEvent(
-            message="No events received from the NAT server. Please check if the server is running.",
+            message="No events received from the DRAgent server. Please check if the server is running.",
             thread_id="thread",
             run_id="run",
         ),
@@ -377,7 +377,7 @@ async def test_run_empty_response_only_empty_frames(
 
 async def test_run_strips_none_fields_in_events(
     set_sse_responses: Callable[[List[MockSSE]], None],
-    nat_agui_agent: NATAGUIAgent,
+    dragent_agui_agent: DRAgentAGUIAgent,
 ) -> None:
     """Events with null fields in the SSE payload must parse without validation errors."""
     msg_id = "msg-1"
@@ -392,7 +392,7 @@ async def test_run_strips_none_fields_in_events(
         "]}"
     )
     set_sse_responses([MockSSE(data=raw_payload)])
-    result = await run(nat_agui_agent)
+    result = await run(dragent_agui_agent)
     assert result == [
         RunStartedEvent(thread_id="thread", run_id="run"),
         TextMessageStartEvent(message_id=msg_id),
@@ -433,7 +433,7 @@ async def test_run_custom_headers_are_sent(
 
     monkeypatch.setattr("httpx_sse.aconnect_sse", mock_aconnect_sse)
 
-    agent = NATAGUIAgent(
+    agent = DRAgentAGUIAgent(
         _TEST_AGENT_NAME, config, headers={"X-Custom-Header": "my-value"}
     )
     await run(agent)
@@ -444,7 +444,7 @@ async def test_run_custom_headers_are_sent(
 
 async def test_run_heartbeat(
     set_sse_responses_slow: Callable[[List[MockSSE]], None],
-    nat_agui_agent_heartbeat: NATAGUIAgent,
+    dragent_agui_agent_heartbeat: DRAgentAGUIAgent,
 ) -> None:
     msg_id = "msg-1"
     set_sse_responses_slow(
@@ -459,7 +459,7 @@ async def test_run_heartbeat(
             ),
         ]
     )
-    result = await run(nat_agui_agent_heartbeat)
+    result = await run(dragent_agui_agent_heartbeat)
     assert RunStartedEvent(thread_id="thread", run_id="run") in result
     assert (
         CustomEvent(name="Heartbeat", value={"thread_id": "thread", "run_id": "run"})

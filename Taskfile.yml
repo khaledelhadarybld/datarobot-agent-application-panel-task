@@ -5,6 +5,9 @@ env:
   ENV: testing
   PYTHONWARNINGS: "ignore"
 dotenv: ['.env', '.env.{{.ENV}}']
+vars:
+  AGENT_VERSION:
+    sh: grep '^_commit:' .datarobot/answers/agent-agent.yml | awk '{print $2}'
 
 includes:
   common:
@@ -43,7 +46,7 @@ tasks:
       - "echo '✨ Choose your agentic framework.'"
       - |
         PYTHONWARNINGS=ignore uvx copier recopy -a .datarobot/answers/agent-agent.yml \
-        -r 11.6.23 \
+        -r {{.AGENT_VERSION}} \
         --data base_answers_file=.datarobot/answers/base.yml \
         --data agent_app_name=agent \
         --data agent_development_port=8842 \

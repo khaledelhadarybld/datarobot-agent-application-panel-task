@@ -14,6 +14,7 @@
 
 import asyncio
 import uuid
+from types import SimpleNamespace
 from typing import Any, AsyncIterator, Callable, Coroutine, Iterator
 from unittest.mock import patch
 
@@ -342,3 +343,106 @@ async def test_run_complex_slow_stream(
             TextMessageEndEvent(message_id="8825aa49-97ce-4fdf-9807-2ad9b4158acc"),
             RunFinishedEvent(thread_id="thread", run_id="run"),
         ]
+
+
+class TestPrepareChatCompletionsInput:
+    """Tests for DataRobotAGUIAgent._prepare_chat_completions_input (assistant tool_calls and tool messages)."""
+
+    def _input(self, messages: list[Any]) -> Any:
+        """Build an input with .messages for _prepare_chat_completions_input."""
+        return SimpleNamespace(messages=messages)
+
+    def test_user_message_only(self, dr_agui_agent: DataRobotAGUIAgent) -> None:
+        msg = SimpleNamespace(role="user", content="Hello")
+        inp = self._input([msg])
+        out = dr_agui_agent._prepare_chat_completions_input(inp)
+        assert out["messages"] == [{"role": "user", "content": "Hello"}]
+        assert out["model"] == "unknown"
+        assert out["stream"] is True
+
+    def test_assistant_message_no_tool_calls(
+        self, dr_agui_agent: DataRobotAGUIAgent
+    ) -> None:
+        msg = SimpleNamespace(role="assistant", content="Hi", tool_calls=None)
+        inp = self._input([msg])
+        out = dr_agui_agent._prepare_chat_completions_input(inp)
+        assert out["messages"] == [{"role": "assistant", "content": "Hi"}]
+
+    def test_assistant_message_tool_calls_object_with_valid_id(
+        self, dr_agui_agent: DataRobotAGUIAgent
+    ) -> None:
+        fn = SimpleNamespace(name="my_tool", arguments='{"x":1}')
+        tc = SimpleNamespace(id="id-123", function=fn)
+        msg = SimpleNamespace(role="assistant", content="", tool_calls=[tc])
+        inp = self._input([msg])
+        out = dr_agui_agent._prepare_chat_completions_input(inp)
+        assert out["messages"] == [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "id-123",
+                        "type": "function",
+                        "function": {"name": "my_tool", "arguments": '{"x":1}'},
+                    }
+                ],
+            }
+        ]
+
+    def test_assistant_tool_call_id_missing_raises(
+        self, dr_agui_agent: DataRobotAGUIAgent
+    ) -> None:
+        tc = {"function": {"name": "f", "arguments": ""}}
+        msg = SimpleNamespace(role="assistant", content="", tool_calls=[tc])
+        inp = self._input([msg])
+        with pytest.raises(ValueError, match="non-empty id"):
+            dr_agui_agent._prepare_chat_completions_input(inp)
+
+    def test_assistant_tool_call_id_empty_string_raises(
+        self, dr_agui_agent: DataRobotAGUIAgent
+    ) -> None:
+        tc = {"id": "", "function": {"name": "f", "arguments": ""}}
+        msg = SimpleNamespace(role="assistant", content="", tool_calls=[tc])
+        inp = self._input([msg])
+        with pytest.raises(ValueError, match="non-empty id"):
+            dr_agui_agent._prepare_chat_completions_input(inp)
+
+    def test_tool_message_with_tool_call_id(
+        self, dr_agui_agent: DataRobotAGUIAgent
+    ) -> None:
+        msg = SimpleNamespace(
+            role="tool", content="result", tool_call_id="call_abc", id=None, error=None
+        )
+        inp = self._input([msg])
+        out = dr_agui_agent._prepare_chat_completions_input(inp)
+        assert out["messages"] == [
+            {"role": "tool", "content": "result", "tool_call_id": "call_abc"}
+        ]
+
+    def test_multi_turn_user_assistant_tool(
+        self, dr_agui_agent: DataRobotAGUIAgent
+    ) -> None:
+        user_msg = SimpleNamespace(role="user", content="Hi")
+        tc = {"id": "tc-1", "function": {"name": "n", "arguments": "{}"}}
+        asst_msg = SimpleNamespace(role="assistant", content="", tool_calls=[tc])
+        tool_msg = SimpleNamespace(
+            role="tool", content="done", tool_call_id="tc-1", id=None, error=None
+        )
+        inp = self._input([user_msg, asst_msg, tool_msg])
+        out = dr_agui_agent._prepare_chat_completions_input(inp)
+        assert len(out["messages"]) == 3
+        assert out["messages"][0] == {"role": "user", "content": "Hi"}
+        assert out["messages"][1]["role"] == "assistant"
+        assert out["messages"][1]["tool_calls"] == [
+            {
+                "id": "tc-1",
+                "type": "function",
+                "function": {"name": "n", "arguments": "{}"},
+            }
+        ]
+        assert out["messages"][2] == {
+            "role": "tool",
+            "content": "done",
+            "tool_call_id": "tc-1",
+        }

@@ -1,9 +1,8 @@
 export const PATHS = {
-  CHAT_PAGE: '/',
+  CHAT_EMPTY: '/chat',
+  CHAT: '/chat/:chatId',
   OAUTH_CB: '/oauth/callback',
   SETTINGS: {
     ROOT: '/settings',
-    GENERAL: '/settings/general',
-    SOURCES: '/settings/sources',
   },
 } as const;

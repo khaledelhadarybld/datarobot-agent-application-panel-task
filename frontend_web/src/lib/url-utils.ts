@@ -15,3 +15,7 @@ export function getBaseUrl() {
 export function getApiUrl() {
   return `${window.location.origin}${getBaseUrl()}api`;
 }
+
+export function getAgUiEndpoint() {
+  return `${window.location.origin}${getBaseUrl()}api/v1/chat`;
+}

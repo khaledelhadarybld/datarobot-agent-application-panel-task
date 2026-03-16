@@ -1,8 +1,10 @@
+export type IOAuthProviderType = 'google' | 'box' | 'microsoft';
+
 export interface IOAuthProvider {
   id: string;
   name: string;
   status?: string | null;
-  type?: string;
+  type: IOAuthProviderType;
   client_id?: string | null;
   metadata?: Record<string, unknown> | null;
 }

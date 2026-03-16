@@ -26,8 +26,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ConfirmDialogModal } from '@/components/ConfirmDialog.tsx';
 import type { ChatListItem } from '@/api/chat/types';
-import { useNavigate } from 'react-router-dom';
+import { useMatch, Link } from 'react-router-dom';
 import { JSX, useState } from 'react';
+import { PATHS } from '@/constants/path.ts';
 
 export interface ChatSidebarProps {
   isLoading: boolean;
@@ -36,7 +37,7 @@ export interface ChatSidebarProps {
   onChatSelect: (threadId: string) => any;
   onChatDelete: (threadId: string, callbackFn: () => void) => any;
   chats?: ChatListItem[];
-  isLoadingDeleteChat: boolean;
+  isDeletingChat: boolean;
 }
 
 export function ChatSidebar({
@@ -46,13 +47,12 @@ export function ChatSidebar({
   onChatSelect,
   onChatCreate,
   onChatDelete,
-  isLoadingDeleteChat,
+  isDeletingChat,
 }: ChatSidebarProps) {
-  const navigate = useNavigate();
-  const goToSettings = () => navigate('/settings');
+  const matchSettings = useMatch(PATHS.SETTINGS.ROOT);
   const [chatToDelete, setChatToDelete] = useState<ChatListItem | null>(null);
   const getIcon = (id: string): JSX.Element => {
-    if (id === chatToDelete?.id && isLoadingDeleteChat) {
+    if (id === chatToDelete?.id && isDeletingChat) {
       return <LoaderCircle className="animate-spin" />;
     }
     if (id === chatId) {
@@ -67,24 +67,21 @@ export function ChatSidebar({
       <SidebarContent>
         <SidebarGroup>
           <SidebarMenuItem key="open-settings" className="flex-1">
-            <SidebarMenuButton disabled={isLoading} asChild onClick={goToSettings}>
-              <div>
+            <SidebarMenuButton disabled={isLoading} asChild isActive={!!matchSettings}>
+              <Link to={PATHS.SETTINGS.ROOT}>
                 <Settings />
-                <span>Settings</span>
-              </div>
+                <span>App Settings</span>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem key="new-chat">
             <SidebarMenuButton
               disabled={isLoading}
-              asChild
               onClick={onChatCreate}
               testId="start-new-chat-btn"
             >
-              <div>
-                <Plus />
-                <span>Start new chat</span>
-              </div>
+              <Plus />
+              <span>Start new chat</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
 

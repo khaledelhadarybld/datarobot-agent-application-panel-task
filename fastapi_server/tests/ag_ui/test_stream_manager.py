@@ -21,7 +21,7 @@ from ag_ui.core import BaseEvent, RunAgentInput, RunFinishedEvent, RunStartedEve
 
 from app.ag_ui.base import AGUIAgent
 from app.ag_ui.dr import DataRobotAGUIAgent
-from app.ag_ui.nat import NATAGUIAgent
+from app.ag_ui.dragent import DRAgentAGUIAgent
 from app.ag_ui.storage import AGUIAgentWithStorage
 from app.ag_ui.stream_manager import AGUIStreamManager, create_storage_dr_agent
 from app.config import Config
@@ -90,7 +90,7 @@ def test_create_storage_dr_agent_uses_dr_agent(config: Config) -> None:
 
 
 def test_create_storage_dr_agent_uses_nat_agent(config: Config) -> None:
-    config = config.model_copy(update={"enable_nat_server": True})
+    config = config.model_copy(update={"enable_dragent_server": True})
     agent = create_storage_dr_agent(
         name="test",
         chat_repo=MagicMock(),
@@ -100,4 +100,4 @@ def test_create_storage_dr_agent_uses_nat_agent(config: Config) -> None:
         headers={},
     )
     assert isinstance(agent, AGUIAgentWithStorage)
-    assert isinstance(agent._inner, NATAGUIAgent)
+    assert isinstance(agent._inner, DRAgentAGUIAgent)
