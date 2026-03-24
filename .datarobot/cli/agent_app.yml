@@ -25,25 +25,6 @@ root:
       - name: "DataRobot OAuth Provider"
         value: "datarobot_provider.py"
         requires: oauth_config
-      - name: "Authlib OAuth Provider"
-        value: "authlib_provider.py"
-        requires: authlib_config
-
-authlib_config:
-  - key: Authlib_OAuth_Providers
-    type: string
-    default:
-    optional: true
-    multiple: true
-    help: |
-      Which authorization servers do you want in the application?
-    options:
-      - name: "Google"
-        requires: google_auth_server
-      - name: "Box"
-        requires: box_auth_server
-      - name: "Microsoft"
-        requires: microsoft_auth_server
 
 oauth_config:
   - key: DataRobot_OAuth_Providers
@@ -89,20 +70,4 @@ box_auth_server:
     optional: false
     help: |
       Enter the client secret for the Box data source.
-      For more information on setting up the provider, see "OAuth Applications" in the README.
-
-microsoft_auth_server:
-  - env: MICROSOFT_CLIENT_ID
-    type: string
-    default:
-    optional: false
-    help: |
-      Enter the client ID for the Microsoft data source.
-      For more information on setting up the provider, see "OAuth Applications" in the README.
-  - env: MICROSOFT_CLIENT_SECRET
-    type: secret_string
-    default:
-    optional: false
-    help: |
-      Enter the client secret for the Microsoft data source.
       For more information on setting up the provider, see "OAuth Applications" in the README.

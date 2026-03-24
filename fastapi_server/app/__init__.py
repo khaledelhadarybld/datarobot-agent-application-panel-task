@@ -19,7 +19,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
-from core.telemetry import configure_uvicorn_logging, init_logging
 from datarobot_asgi_middleware import DataRobotASGIMiddleware
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import HTMLResponse
@@ -30,6 +29,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.api import router as api_router
 from app.config import Config
 from app.deps import Deps, create_deps
+from app.telemetry import configure_uvicorn_logging, init_logging, otel
 
 base_router = APIRouter()
 
@@ -71,6 +71,12 @@ def register_log_filter() -> None:
             )
 
     logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+
+
+@base_router.get("/api/v1/welcome")
+async def welcome() -> dict[str, str]:
+    """Simple API endpoint for demonstration with React"""
+    return {"message": "Hello from Fast API"}
 
 
 def get_app_base_url(api_port: str | None) -> str:
@@ -126,6 +132,7 @@ def create_app(
 
     init_logging(level=config.log_level, format_type=config.log_format)
 
+    # Configure uvicorn logging with health check filtering and custom formatting
     configure_uvicorn_logging(
         log_format=config.log_format, log_level=config.log_level.value
     )
@@ -210,4 +217,6 @@ def create_app(
 
     register_log_filter()
 
+    otel.log_application_start()
+    otel.instrument_fastapi_app(app)
     return app

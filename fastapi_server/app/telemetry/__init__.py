@@ -21,6 +21,7 @@ from .logging import (
     init_logging,
     log_api_call,
 )
+from .otel import OTel, otel
 from .uvicorn_filter import configure_uvicorn_logging
 
 __all__ = [
@@ -28,8 +29,10 @@ __all__ = [
     "FormatType",
     "TextFormatter",
     "JsonFormatter",
+    "OTel",
     "init_logging",
     "get_logger",
     "log_api_call",
+    "otel",
     "configure_uvicorn_logging",
 ]

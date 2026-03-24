@@ -10,3 +10,5 @@ formatter:
 exclude:
   - .datarobot/
   - .harness/
+  - "**/.venv/**"
+  - "**/node_modules/**"

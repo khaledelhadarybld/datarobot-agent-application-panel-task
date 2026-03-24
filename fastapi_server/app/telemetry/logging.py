@@ -44,6 +44,81 @@ _ALL_EXCLUDED_LOG_RECORD_ATTRS = _STANDARD_LOG_RECORD_ATTRS.union(
 )
 
 
+class RedactingFormatter(logging.Formatter):
+    """
+    A formatter that wraps another formatter to redact sensitive information.
+    It redacts sensitive keys from the log record's extra fields and their
+    string representations.
+    """
+
+    sensitive_keys: list[str] = [
+        "access_token",
+        "refresh_token",
+    ]
+
+    def __init__(self, original_formatter: logging.Formatter):
+        super().__init__()
+        self.original_formatter = original_formatter
+
+        self.patterns = []
+        for key in self.sensitive_keys:
+            # Match key='value' or key="value" or key=value
+            pattern = re.compile(
+                rf"{re.escape(key)}=(['\"]?)([^'\"\s,)}}]+)\1", re.IGNORECASE
+            )
+            self.patterns.append((key, pattern))
+
+    def _redact_dict(self, obj: Any) -> Any:
+        """
+        Recursively redact sensitive information from dictionaries and objects.
+        Returns a new object with redacted values without mutating the original.
+        """
+        if isinstance(obj, dict):
+            return {
+                k: "[REDACTED]" if k in self.sensitive_keys else self._redact_dict(v)
+                for k, v in obj.items()
+            }
+        elif isinstance(obj, (list, tuple)):
+            return type(obj)(self._redact_dict(item) for item in obj)
+        elif hasattr(obj, "__dict__"):
+            # create a shallow copy first to avoid mutating the original
+            try:
+                obj_copy = copy.copy(obj)
+                for key in self.sensitive_keys:
+                    if hasattr(obj_copy, key):
+                        setattr(obj_copy, key, "[REDACTED]")
+                return obj_copy
+            except (TypeError, AttributeError):
+                return obj
+        else:
+            return obj
+
+    def format(self, record: logging.LogRecord) -> str:
+        """
+        Format the record, redacting sensitive keys from attributes and
+        their string representations.
+        """
+        # First, redact direct attributes on the record
+        for key in self.sensitive_keys:
+            if hasattr(record, key):
+                setattr(record, key, "[REDACTED]")
+
+        # Redact sensitive data in all extra fields
+        for key, value in list(record.__dict__.items()):
+            if key not in _ALL_EXCLUDED_LOG_RECORD_ATTRS:
+                record.__dict__[key] = self._redact_dict(value)
+
+        # Format the record
+        formatted = self.original_formatter.format(record)
+
+        # Apply regex-based redaction to catch any remaining sensitive data
+        # in string representations
+        for key, pattern in self.patterns:
+            formatted = pattern.sub(rf"{key}=\1[REDACTED]\1", formatted)
+
+        return formatted
+
+
 class JsonFormatter(logging.Formatter):
     """
     Custom JSON formatter for structured logging.
@@ -139,81 +214,6 @@ class TextFormatter(logging.Formatter):
         return message
 
 
-class RedactingFormatter(logging.Formatter):
-    """
-    A formatter that wraps another formatter to redact sensitive information.
-    It redacts sensitive keys from the log record's extra fields and their
-    string representations.
-    """
-
-    sensitive_keys: list[str] = [
-        "access_token",
-        "refresh_token",
-    ]
-
-    def __init__(self, original_formatter: logging.Formatter):
-        super().__init__()
-        self.original_formatter = original_formatter
-
-        self.patterns = []
-        for key in self.sensitive_keys:
-            # Match key='value' or key="value" or key=value
-            pattern = re.compile(
-                rf"{re.escape(key)}=(['\"]?)([^'\"\s,)}}]+)\1", re.IGNORECASE
-            )
-            self.patterns.append((key, pattern))
-
-    def _redact_dict(self, obj: Any) -> Any:
-        """
-        Recursively redact sensitive information from dictionaries and objects.
-        Returns a new object with redacted values without mutating the original.
-        """
-        if isinstance(obj, dict):
-            return {
-                k: "[REDACTED]" if k in self.sensitive_keys else self._redact_dict(v)
-                for k, v in obj.items()
-            }
-        elif isinstance(obj, (list, tuple)):
-            return type(obj)(self._redact_dict(item) for item in obj)
-        elif hasattr(obj, "__dict__"):
-            # create a shallow copy first to avoid mutating the original
-            try:
-                obj_copy = copy.copy(obj)
-                for key in self.sensitive_keys:
-                    if hasattr(obj_copy, key):
-                        setattr(obj_copy, key, "[REDACTED]")
-                return obj_copy
-            except (TypeError, AttributeError):
-                return obj
-        else:
-            return obj
-
-    def format(self, record: logging.LogRecord) -> str:
-        """
-        Format the record, redacting sensitive keys from attributes and
-        their string representations.
-        """
-        # First, redact direct attributes on the record
-        for key in self.sensitive_keys:
-            if hasattr(record, key):
-                setattr(record, key, "[REDACTED]")
-
-        # Redact sensitive data in all extra fields
-        for key, value in list(record.__dict__.items()):
-            if key not in _ALL_EXCLUDED_LOG_RECORD_ATTRS:
-                record.__dict__[key] = self._redact_dict(value)
-
-        # Format the record
-        formatted = self.original_formatter.format(record)
-
-        # Apply regex-based redaction to catch any remaining sensitive data
-        # in string representations
-        for key, pattern in self.patterns:
-            formatted = pattern.sub(rf"{key}=\1[REDACTED]\1", formatted)
-
-        return formatted
-
-
 def init_logging(
     level: LogLevel = LogLevel.INFO,
     format_type: FormatType = "text",
@@ -240,9 +240,8 @@ def init_logging(
 
     # Create handler with appropriate formatter
     handler = logging.StreamHandler(stream)
-    formatter: Union[JsonFormatter, TextFormatter]
     if format_type == "json":
-        formatter = JsonFormatter()
+        formatter: logging.Formatter = JsonFormatter()
     else:
         formatter = TextFormatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -250,14 +249,14 @@ def init_logging(
         formatter.converter = time.gmtime
 
     # Wrap the formatter with RedactingFormatter
-    redacting_formatter = RedactingFormatter(formatter)
-    handler.setFormatter(redacting_formatter)
+    formatter = RedactingFormatter(formatter)
+    handler.setFormatter(formatter)
 
     root_logger.addHandler(handler)
 
 
 def get_logger(
-    name: str = "agentic-application-starter",
+    name: str = "",
     level: LogLevel = LogLevel.INFO,
     stream: Any = sys.stdout,
     format_type: FormatType = "text",
@@ -280,18 +279,16 @@ def get_logger(
 
     # Create handler with appropriate formatter
     handler = logging.StreamHandler(stream)
-    formatter: Union[JsonFormatter, TextFormatter]
     if format_type == "json":
-        formatter = JsonFormatter()
+        formatter: logging.Formatter = JsonFormatter()
     else:
         formatter = TextFormatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         formatter.converter = time.gmtime
 
-    # Wrap the formatter with RedactingFormatter
-    redacting_formatter = RedactingFormatter(formatter)
-    handler.setFormatter(redacting_formatter)
+    formatter = RedactingFormatter(formatter)
+    handler.setFormatter(formatter)
 
     # Configure logger
     logger = logging.getLogger(name)

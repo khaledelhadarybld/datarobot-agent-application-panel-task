@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 11.7.1
+- Excluded LiteLLM releases `1.82.7` and `1.82.8` from resolution (security issue mitigation) for ALL components: agent, llm, fastapi_server, infra
+- Bumped `agent` component from 11.7.5 to 11.7.11:
+  - Bumped `datarobot-genai[langgraph, dragent]` from 0.8.6 to 0.8.8
+  - UV: multi-platform `environments` and overrides to drop unused transitive packages (`gevent`, `onnxruntime`, `fastembed`)
+  - Dynamic lock files for all agent types for strict control of dependencies
+- Bumped `llm` component from 11.4.6 to 11.4.12:
+  - Added error help to invalid provider for llm gateway
+  - Corrected naming for LLM credentials
+- Bumped `base` component
+- Bumped `fastapi_server` component
+- Bumped `ag-ui-protocol` in `fastapi_server`: aligned LiteLLM constraints with the agent stack
+- Removed authlib from CLI interactive setup
+
 ## 11.7.0
 - Bumped `agent` component from 11.6.20 to 11.7.5
   - Support for NAT A2A

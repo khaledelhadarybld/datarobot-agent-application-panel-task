@@ -68,7 +68,7 @@ default_llm_friendly_name: str = os.environ.get(
 )
 
 validate_feature_flags(REQUIRED_FEATURE_FLAGS)
-llm_credential_runtime_params = get_runtime_values(default_llm_id)
+llm_credential_runtime_params = get_runtime_values(default_model)
 # This will ensure your credentials are working properly
 # https://docs.litellm.ai/docs/providers for more details
 # on what string to pass to `verify_llm` This default
@@ -149,7 +149,7 @@ app_runtime_parameters = [
     datarobot.ApplicationSourceRuntimeParameterValueArgs(
         key="LLM_DEFAULT_MODEL",
         type="string",
-        value=default_llm_id,
+        value=default_model,
     ),
     datarobot.ApplicationSourceRuntimeParameterValueArgs(
         key="LLM_DEFAULT_MODEL_FRIENDLY_NAME",
@@ -166,7 +166,7 @@ custom_model_runtime_parameters = [
     datarobot.CustomModelRuntimeParameterValueArgs(
         key="LLM_DEFAULT_MODEL",
         type="string",
-        value=default_llm_id,
+        value=default_model,
     ),
 ]
 pulumi.export("Deployment ID " + llm_resource_name, llm_deployment.id)

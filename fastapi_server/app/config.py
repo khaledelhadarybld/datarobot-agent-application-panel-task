@@ -14,11 +14,11 @@
 import os
 from typing import Sequence
 
-from core.telemetry.logging import FormatType, LogLevel
 from datarobot.core.config import DataRobotAppFrameworkBaseSettings
 from pydantic import Field, ValidationInfo, field_validator
 
 from app.auth.oauth import OAuthImpl
+from app.telemetry import FormatType, LogLevel
 
 
 class Config(DataRobotAppFrameworkBaseSettings):
