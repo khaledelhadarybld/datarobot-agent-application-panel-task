@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 11.6.5
+- HOTFIX(11.6): custom `start_server.sh` which fixed issues with the execution environment in 11.6 version
+
 ## 11.6.4
 - Renamed `datarobot-agent-application` to Agentic Starter application template.
 - Bumped `agent` component from 11.6.20 to 11.6.30
