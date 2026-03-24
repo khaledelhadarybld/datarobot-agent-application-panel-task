@@ -65,10 +65,6 @@ DEFAULT_AGENT_REPLICAS: Final[int] = 2 if ENABLE_AGENT_HA_MODE else 1
 DEFAULT_AGENT_DEPLOYMENT_MIN_COMPUTES: Final[int] = 0
 DEFAULT_AGENT_DEPLOYMENT_MAX_COMPUTES: Final[int] = 4 if ENABLE_AGENT_HA_MODE else 2
 
-# dragent frontserver environment flag
-enable_dragent_server_bool = (
-    os.environ.get("ENABLE_DRAGENT_SERVER", "").strip().lower() == "true"
-)
 
 EXCLUDE_PATTERNS = [
     re.compile(pattern)
@@ -98,11 +94,29 @@ __all__ = [
     "agent_deployment_args",
     "agent_agent_deployment",
     "agent_app_runtime_parameters",
+    "agent_agent_runtime_parameters",
 ]
 
 agent_application_name: str = "agent"
 agent_asset_name: str = f"[{PROJECT_NAME}] [agent]"
 agent_application_path = project_dir.parent / "agent"
+
+_is_dragent_server_enabled = (
+    os.environ.get("ENABLE_DRAGENT_SERVER", "").strip().lower() == "true"
+)
+
+
+def _check_a2a_server_enabled() -> bool:
+    workflow_yaml_path = project_dir.parent / "agent" / "agent" / "workflow.yaml"
+    if not workflow_yaml_path.exists():
+        return False
+    with open(workflow_yaml_path) as f:
+        workflow_config = yaml.safe_load(f) or {}
+    a2a = workflow_config.get("general", {}).get("front_end", {}).get("a2a")
+    return a2a is not None
+
+
+_is_a2a_server_enabled = _check_a2a_server_enabled()
 
 
 def _generate_metadata_yaml(
@@ -474,7 +488,7 @@ if session_secret_key := os.environ.get(SESSION_SECRET_KEY):
         ),
     )
 
-if enable_dragent_server_bool:
+if _is_dragent_server_enabled:
     enable_dragent_server_runtime_param = (
         pulumi_datarobot.CustomModelRuntimeParameterValueArgs(
             key="ENABLE_DRAGENT_SERVER",
@@ -557,6 +571,7 @@ pulumi.export("Agent Playground URL " + agent_asset_name, agent_playground_url) 
 
 agent_agent_deployment_id: pulumi.Output[str] = cast(pulumi.Output[str], "None")
 agent_deployment_endpoint: pulumi.Output[str] = cast(pulumi.Output[str], "None")
+agent_deployment_a2a_endpoint: pulumi.Output[str] = cast(pulumi.Output[str], "None")
 if os.environ.get("AGENT_DEPLOY") != "0":
     agent_prediction_environment = pulumi_datarobot.PredictionEnvironment(
         resource_name=agent_asset_name + " Prediction Environment",
@@ -607,13 +622,18 @@ if os.environ.get("AGENT_DEPLOY") != "0":
     agent_deployment_endpoint = agent_agent_deployment.id.apply(
         lambda id: (
             f"{os.getenv('DATAROBOT_ENDPOINT')}/deployments/{id}/directAccess"
-            if enable_dragent_server_bool
+            if _is_dragent_server_enabled
             else f"{os.getenv('DATAROBOT_ENDPOINT')}/deployments/{id}"
         )
     )
     agent_deployment_completions_endpoint = agent_agent_deployment.id.apply(
         lambda id: (
             f"{os.getenv('DATAROBOT_ENDPOINT')}/deployments/{id}/chat/completions"
+        )
+    )
+    agent_deployment_a2a_endpoint = agent_agent_deployment.id.apply(
+        lambda id: (
+            f"{os.getenv('DATAROBOT_ENDPOINT')}/deployments/{id}/directAccess/a2a/"
         )
     )
 
@@ -638,11 +658,32 @@ agent_app_runtime_parameters = [
         value=agent_deployment_endpoint,
     ),
 ]
-if enable_dragent_server_bool:
+if _is_dragent_server_enabled:
     agent_app_runtime_parameters.append(
         pulumi_datarobot.ApplicationSourceRuntimeParameterValueArgs(
             key="ENABLE_DRAGENT_SERVER",
             type="boolean",
             value="true",
+        ),
+    )
+
+agent_agent_runtime_parameters = [
+    pulumi_datarobot.CustomModelRuntimeParameterValueArgs(
+        key=agent_application_name.upper() + "_DEPLOYMENT_ID",
+        type="string",
+        value=agent_agent_deployment_id,
+    ),
+    pulumi_datarobot.CustomModelRuntimeParameterValueArgs(
+        key=agent_application_name.upper() + "_ENDPOINT",
+        type="string",
+        value=agent_deployment_endpoint,
+    ),
+]
+if _is_dragent_server_enabled and _is_a2a_server_enabled:
+    agent_agent_runtime_parameters.append(
+        pulumi_datarobot.CustomModelRuntimeParameterValueArgs(
+            key=agent_application_name.upper() + "_A2A_ENDPOINT",
+            type="string",
+            value=agent_deployment_a2a_endpoint,
         ),
     )

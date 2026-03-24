@@ -54,6 +54,7 @@ It supports local development and testing, as well as one-command deployments to
 - [Deploy your agent](#deploy-your-agent)
 - [MCP server](#mcp-server)
 - [OAuth applications](#oauth-applications)
+- [Agent-to-agent](#agent-to-agent)
 - [Troubleshooting](#troubleshooting)
 - [Get help](#get-help)
 
@@ -602,6 +603,47 @@ dr self version   # verify
    ```sh
    dr run install
    ```
+# Agent2Agent
+
+Template agents can expose themselves as agent-to-agent (A2A) servers and connect to remote agents via the agent-to-agent protocol.
+
+To expose an agent via A2A:
+
+- Templates must have a `general.front_end.a2a` configuration block. By default, templates already include this.
+- Run the agent with the experimental dragent front server: set `ENABLE_DRAGENT_SERVER=true` in your `.env` file.
+
+To connect an agent via A2A to a remote agent:
+
+- Uncomment the `function_groups` and `workflow.tool_names` blocks in the `workflow.yaml` file.
+- Run the agent with the experimental dragent front server: set `ENABLE_DRAGENT_SERVER=true` in your `.env` file.
+
+Enable the **ENABLE_RUNTIME_PARAMETERS_IMPROVEMENTS** feature flag in DataRobot to use environment variables in the `workflow.yaml` files.
+
+### Agent cards and DataRobot deployments
+
+When the `ENABLE_GENAI_AGENT_TO_AGENT_SUPPORT` feature flag is enabled and you deploy an agent that exposes A2A server endpoints, the agent card for that agent is stored in DataRobot during deployment. Use the following endpoints:
+
+- **List deployments with agent cards:** `GET deployments/?isA2AAgent=true`
+- **Retrieve an agent card:** `GET deployments/<deployment_id>/agentCard`
+
+
+## A2A agents hosted outside of DataRobot
+
+For A2A agents hosted outside of DataRobot:
+
+1. Create an external model with the "Agentic Workflow" target type and the default configuration.
+2. Deploy the external model.
+3. Push the agent card via `PUT deployments/<deployment_id>/agentCard`.
+
+For external deployments, you can also remove the agent card with `DELETE deployments/<deployment_id>/agentCard`.
+
+```python
+deployments = dr.Deployment.list(filters=DeploymentListFilters(is_a2a_agent=True))
+agent_card = deployment.get_agent_card()
+# Only available for external deployments
+deployment.upload_agent_card(agent_card)
+deployment.delete_agent_card()
+```
 
 # Get help
 

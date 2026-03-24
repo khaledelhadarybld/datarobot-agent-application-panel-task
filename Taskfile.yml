@@ -115,10 +115,14 @@ tasks:
     desc: "🚀 Deploy all services"
     env:
       AGENT_DEPLOY: "1"
+    deps:
+      - install
     cmds:
       - task: infra:deploy
 
   deploy-dev:
     desc: "🚀 Deploy infrastructure and services to development"
+    deps:
+      - install
     cmds:
       - task: infra:deploy-dev

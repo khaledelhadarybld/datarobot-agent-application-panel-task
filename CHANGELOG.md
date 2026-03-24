@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-## 11.6.5
-- HOTFIX(11.6): custom `start_server.sh` which fixed issues with the execution environment in 11.6 version
+## 11.7.0
+- Bumped `agent` component from 11.6.20 to 11.7.5
+  - Support for NAT A2A
+  - Register function for CrewAI
+  - Use forwarded headers and authorization context when running agents with dragent
+  - Allow agents to be exposed via A2A and allow them to connect to A2A agents
+  - Fix issues of LangGraph MCP tools when working with `dragent`
+  - Disable step adaptor reporting LLM events twice for custom agents
+  - Enable `dragent` for `base` and `crewai` agents
+  - A2A Auth integration with `dragent`
+  - Pin compatible versions for `fastapi` and `starlette`
+  - Add event streaming to `llamaindex`
+- Added `install` as a prerequisite to `deploy` and `deploy-dev` tasks to ensure dependencies are up-to-date before deployment.
 
 ## 11.6.4
 - Renamed `datarobot-agent-application` to Agentic Starter application template.

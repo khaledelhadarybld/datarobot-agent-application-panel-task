@@ -98,10 +98,18 @@ tasks:
     desc: "🚀 Deploy all services"
     env:
       AGENT_DEPLOY: "1"
+    {{- if .HasInstall }}
+    deps:
+      - install
+    {{- end }}
     cmds:
       - task: infra:deploy
 
   deploy-dev:
     desc: "🚀 Deploy infrastructure and services to development"
+    {{- if .HasInstall }}
+    deps:
+      - install
+    {{- end }}
     cmds:
       - task: infra:deploy-dev

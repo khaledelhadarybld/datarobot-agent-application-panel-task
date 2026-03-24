@@ -12,12 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Annotated, Any
 
+from ag_ui.core import RunAgentInput
+from datarobot_genai.dragent.frontends.converters import (
+    aggregate_dragent_event_responses,
+)
+from datarobot_genai.dragent.frontends.response import DRAgentEventResponse
+from datarobot_genai.nat.helpers import (
+    extract_authorization_from_context,
+    extract_datarobot_headers_from_context,
+)
 from nat.builder.builder import Builder
 from nat.builder.framework_enum import LLMFrameworkEnum
-from nat.cli.register_workflow import register_function
+from nat.cli.register_workflow import register_per_user_function
 from nat.data_models.agent import AgentBaseConfig
+from nat.data_models.component_ref import FunctionGroupRef
+from nat.data_models.streaming import Streaming
 
 
 class LanggraphAgentConfig(AgentBaseConfig, name="langgraph_agent"):  # type: ignore[call-arg, misc]
@@ -27,16 +38,18 @@ class LanggraphAgentConfig(AgentBaseConfig, name="langgraph_agent"):  # type: ig
     The LLM is managed by NAT and accessed via builder.get_llm().
     """
 
+    tool_names: list[FunctionGroupRef] = []
 
-@register_function(  # type: ignore[untyped-decorator]
+
+@register_per_user_function(  # type: ignore[untyped-decorator]
     config_type=LanggraphAgentConfig,
+    input_type=RunAgentInput,
+    streaming_output_type=DRAgentEventResponse,
     framework_wrappers=[LLMFrameworkEnum.LANGCHAIN],
 )
 async def langgraph_agent(
     config: LanggraphAgentConfig, builder: Builder
 ) -> AsyncGenerator[Any, None]:
-    from ag_ui.core import RunAgentInput  # noqa: PLC0415
-    from datarobot_genai.dragent.response import DRAgentEventResponse  # noqa: PLC0415
     from nat.builder.function_info import FunctionInfo  # noqa: PLC0415
 
     from agent.myagent import MyAgent  # noqa: PLC0415
@@ -45,11 +58,30 @@ async def langgraph_agent(
         config.llm_name, wrapper_type=LLMFrameworkEnum.LANGCHAIN
     )
 
-    agent = MyAgent(llm=llm, verbose=config.verbose)
+    # Fetch workflow tools (from tool_names in workflow config) as LangChain-compatible tools
+    workflow_tools = await builder.get_tools(
+        config.tool_names, wrapper_type=LLMFrameworkEnum.LANGCHAIN
+    )
 
     async def _response_fn(
         input_message: RunAgentInput,
-    ) -> AsyncGenerator[DRAgentEventResponse, None]:
+    ) -> Annotated[
+        AsyncGenerator[DRAgentEventResponse, None],
+        # Streaming tells NAT how to go from a list of streaming events to a single response
+        # object for non-streaming routes.
+        Streaming(convert=aggregate_dragent_event_responses),
+    ]:
+        # Agent should have access to request-specific headers and authorization context
+        forwarded_headers = extract_datarobot_headers_from_context()
+        authorization_context = extract_authorization_from_context()
+        agent = MyAgent(
+            llm=llm,
+            workflow_tools=workflow_tools,
+            verbose=config.verbose,
+            forwarded_headers=forwarded_headers,
+            authorization_context=authorization_context,
+        )
+
         async for event, pipeline_interactions, usage_metrics in agent.invoke(
             input_message
         ):
