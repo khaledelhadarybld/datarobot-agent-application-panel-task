@@ -1,2 +1,61 @@
 ---
-description: Data-processing agent with PII removal, chart generation, data analysis, and math calculation tools.
+general:
+  front_end:
+    _type: dragent_fastapi
+    step_adaptor:
+      mode: 'off'
+    a2a:
+      server:
+        name: Data Processing Assistant
+        description: >
+          A multi-agent data-processing assistant with specialized tools for
+          data analysis, chart generation, math calculations, and PII removal.
+          Orchestrated by a supervisor node with conditional LangGraph edges.
+      skills:
+        - id: data_analysis
+          name: Analyse Data
+          description: >
+            Explores, summarises, filters, groups, and statistically analyses
+            tabular or JSON data using pandas DataFrame operations.
+          tags: [data, analysis, pandas]
+          examples:
+            - 'Describe this dataset: [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]'
+            - Filter rows where age > 25 from this data.
+        - id: visualization
+          name: Generate Charts
+          description: >
+            Creates bar, line, pie, scatter, and histogram charts from JSON data.
+          tags: [chart, visualization, plot]
+          examples:
+            - 'Create a bar chart from this data: {"x": ["A", "B", "C"], "y": [10, 20, 30]}'
+            - Plot a pie chart of sales by region.
+        - id: math_calculation
+          name: Calculate
+          description: >
+            Evaluates mathematical expressions using Python's math library and numpy.
+            Supports arithmetic, trigonometry, logarithms, statistics, and linear algebra.
+          tags: [math, calculation, statistics]
+          examples: [Calculate sqrt(144) + log(100), 'What is the mean of [10, 20, 30, 40, 50]?']
+        - id: pii_removal
+          name: Remove PII
+          description: >
+            Detects and redacts personally identifiable information from text,
+            including emails, phone numbers, SSNs, credit card numbers, and IP addresses.
+          tags: [pii, privacy, redaction]
+          examples:
+            - 'Remove PII from: Contact john@example.com or call 555-123-4567'
+            - Redact personal information from this text.
+llms:
+  datarobot_llm:
+    _type: datarobot-llm-component
+workflow:
+  _type: langgraph_agent
+  llm_name: datarobot_llm
+  description: >
+    Multi-agent data-processing workflow with supervisor-based routing.
+    Specialist agents: Data Analysis (pandas), Visualization (charts),
+    Math Calculation (numpy/math), and PII Removal. Orchestrated by a
+    deterministic supervisor node with conditional LangGraph edges.
+authentication:
+  datarobot_auth:
+    _type: datarobot_api_key

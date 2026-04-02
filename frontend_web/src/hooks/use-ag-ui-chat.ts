@@ -16,6 +16,7 @@ import {
 import type { AgentSubscriberParams, ToolCallResultEvent } from '@ag-ui/client';
 
 import {
+  buildConversationMessages,
   createCustomMessageWidget,
   createReasoningMessage,
   createTextMessageFromAgUiEvent,
@@ -105,7 +106,13 @@ export function useAgUiChat({
 
   async function sendMessage(message: string) {
     const messageId = uuid();
-    agent.messages = [{ id: messageId, role: 'user', content: message }];
+
+    // Merge persisted history + in-session events + current user turn
+    agent.messages = buildConversationMessages(
+      history ?? [],
+      events,
+      { id: messageId, content: message },
+    );
 
     const historyMessage = createTextMessageFromUserInput({ message, chatId, messageId });
     addEvent({ type: 'message', value: historyMessage });
