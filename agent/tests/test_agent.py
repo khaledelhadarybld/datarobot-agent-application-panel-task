@@ -329,22 +329,26 @@ class TestMyAgentLangGraph:
                     },
                 )
 
+    # ------------------------------------------------------------------
+    # Agent node tests
+    # ------------------------------------------------------------------
+
     @patch("agent.myagent.create_agent")
-    def test_agent_planner_property(self, mock_create_agent, agent):
-        """Test that agent_planner creates a react agent."""
+    def test_agent_node_property(self, mock_create_agent, agent):
+        """Test that agent_node creates a react agent with all tools."""
         mock_llm = Mock()
         with patch.object(MyAgent, "llm", return_value=mock_llm):
-            _ = agent.agent_planner
+            _ = agent.agent_node
             mock_create_agent.assert_called_once_with(
                 mock_llm,
                 tools=ANY,
                 system_prompt=ANY,
-                name="planner_agent",
+                name="agent",
             )
 
     @patch("agent.myagent.create_agent")
-    def test_agent_planner_includes_workflow_tools(self, mock_create_agent):
-        """Test that agent_planner includes workflow_tools alongside mcp_tools."""
+    def test_agent_node_includes_workflow_tools(self, mock_create_agent):
+        """Test that agent_node includes workflow_tools alongside mcp_tools."""
         extra_tool = Mock()
         agent = MyAgent(
             api_key="test_key",
@@ -356,40 +360,29 @@ class TestMyAgentLangGraph:
             with patch.object(
                 type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
             ):
-                _ = agent.agent_planner
+                _ = agent.agent_node
                 _, kwargs = mock_create_agent.call_args
                 assert extra_tool in kwargs["tools"]
 
-    @patch("agent.myagent.create_agent")
-    def test_agent_writer_property(self, mock_create_agent, agent):
-        """Test that agent_writer creates a react agent."""
-        mock_llm = Mock()
-        with patch.object(MyAgent, "llm", return_value=mock_llm):
-            _ = agent.agent_writer
-            mock_create_agent.assert_called_once_with(
-                mock_llm,
-                tools=ANY,
-                system_prompt=ANY,
-                name="writer_agent",
-            )
+    # ------------------------------------------------------------------
+    # Tool property tests
+    # ------------------------------------------------------------------
 
-    @patch("agent.myagent.create_agent")
-    def test_agent_writer_includes_workflow_tools(self, mock_create_agent):
-        """Test that agent_writer includes workflow_tools alongside mcp_tools."""
-        extra_tool = Mock()
-        agent = MyAgent(
-            api_key="test_key",
-            api_base="test_base",
-            workflow_tools=[extra_tool],
-        )
-        mock_llm = Mock()
-        with patch.object(MyAgent, "llm", return_value=mock_llm):
-            with patch.object(
-                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
-            ):
-                _ = agent.agent_writer
-                _, kwargs = mock_create_agent.call_args
-                assert extra_tool in kwargs["tools"]
+    def test_tools_property(self, agent):
+        """Test that tools returns all four tools."""
+        tools = agent.tools
+        assert len(tools) == 4
+        tool_names = {t.name for t in tools}
+        assert tool_names == {
+            "remove_pii",
+            "generate_chart",
+            "analyze_data",
+            "calculate",
+        }
+
+    # ------------------------------------------------------------------
+    # Workflow and template tests
+    # ------------------------------------------------------------------
 
     def test_workflow_property(self, agent):
         """Test that workflow returns a StateGraph with correct structure."""
@@ -399,8 +392,7 @@ class TestMyAgentLangGraph:
                 workflow = agent.workflow
                 # Verify it's a StateGraph (basic check)
                 assert workflow is not None
-                assert "planner_node" in workflow.nodes
-                assert "writer_node" in workflow.nodes
+                assert "agent_node" in workflow.nodes
 
     def test_prompt_template_property(self, agent):
         """Test that prompt_template returns a ChatPromptTemplate."""

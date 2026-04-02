@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from datetime import datetime
 from typing import Any, Optional, Union
 
 from datarobot_genai.core.agents import (
@@ -26,13 +25,16 @@ from langchain_litellm.chat_models import ChatLiteLLM
 from langgraph.graph import END, START, MessagesState, StateGraph
 
 from agent.config import Config
+from agent.tools import analyze_data, calculate, generate_chart, remove_pii
 
 
 class MyAgent(LangGraphAgent):
-    """MyAgent is a custom agent that uses Langgraph to plan and write content.
-    It utilizes DataRobot's LLM Gateway or a specific deployment for language model interactions.
-    This example illustrates 2 agents that handle content creation tasks, including planning
-    and writing blog posts.
+    """MyAgent is a custom data-processing agent with tools for PII removal,
+    chart generation, data analysis, and mathematical calculations.
+
+    It uses DataRobot's LLM Gateway or a specific deployment for language
+    model interactions and exposes a single-node workflow that has access
+    to all four tools.
     """
 
     def __init__(
@@ -47,7 +49,7 @@ class MyAgent(LangGraphAgent):
         workflow_tools: Optional[list[BaseTool]] = None,
         **kwargs: Any,
     ):
-        """Initializes the MyAgent class with API key, base URL, model, and verbosity settings.
+        """Initializes the MyAgent class.
 
         Args:
             api_key: Optional[str]: API key for authentication with DataRobot services.
@@ -64,7 +66,6 @@ class MyAgent(LangGraphAgent):
                 When set, llm() returns this directly instead of creating a ChatLiteLLM.
             workflow_tools: Optional[list[BaseTool]]: Additional tools from the workflow config (e.g. A2A client tools). Keyword-only.
             **kwargs: Any: Additional keyword arguments passed to the agent.
-                Contains any parameters received in the CompletionCreateParams.
 
         Returns:
             None
@@ -85,16 +86,24 @@ class MyAgent(LangGraphAgent):
             self.model = self.default_model
 
     @property
+    def tools(self) -> list[BaseTool]:
+        """Return the list of tools available to the agent."""
+        return [
+            remove_pii,
+            generate_chart,
+            analyze_data,
+            calculate,
+        ]
+
+    @property
     def workflow(self) -> StateGraph[MessagesState]:
         langgraph_workflow = StateGraph[
             MessagesState, None, MessagesState, MessagesState
         ](MessagesState)
-        langgraph_workflow.add_node("planner_node", self.agent_planner)
-        langgraph_workflow.add_node("writer_node", self.agent_writer)
-        langgraph_workflow.add_edge(START, "planner_node")
-        langgraph_workflow.add_edge("planner_node", "writer_node")
-        langgraph_workflow.add_edge("writer_node", END)
-        return langgraph_workflow  # type: ignore[return-value]
+        langgraph_workflow.add_node("agent_node", self.agent_node)
+        langgraph_workflow.add_edge(START, "agent_node")
+        langgraph_workflow.add_edge("agent_node", END)
+        return langgraph_workflow
 
     @property
     def prompt_template(self) -> ChatPromptTemplate:
@@ -102,14 +111,13 @@ class MyAgent(LangGraphAgent):
             [
                 (
                     "system",
-                    "You are a helpful assistant that plans and writes content based on the "
-                    "user's topic. Chat history is provided via {chat_history} (it may be empty). "
-                    "Use it when helpful to stay consistent across turns.",
+                    "You are a helpful data-processing assistant with access to "
+                    "specialized tools. Chat history is provided via {chat_history} "
+                    "(it may be empty). Use it to stay consistent across turns.",
                 ),
                 (
                     "user",
-                    f"The topic is {{topic}}. Make sure you find any interesting and "
-                    f"relevant information given the current year is {datetime.now().year}.",
+                    "{user_prompt_content}",
                 ),
             ]
         )
@@ -156,48 +164,39 @@ class MyAgent(LangGraphAgent):
         return ChatLiteLLM(**config)
 
     @property
-    def agent_planner(self) -> Any:
+    def agent_node(self) -> Any:
         return create_agent(
             self.llm(),
-            tools=self.mcp_tools + self._workflow_tools,
+            tools=self.tools + self.mcp_tools + self._workflow_tools,
             system_prompt=make_system_prompt(
-                "You are a content planner. You create brief, structured outlines for blog articles. "
-                "You identify the most important points and cite relevant sources. Keep it simple and to the point - "
-                "this is just an outline for the writer.\n"
+                "You are a powerful data-processing assistant with four specialized tools.\n"
                 "\n"
-                "You have access to tools that can help you research and gather information. Use these tools when "
-                "required to collect accurate and up-to-date information about the topic for your planning and research.\n"
+                "## Your Tools\n"
                 "\n"
-                "Create a simple outline with:\n"
-                "1. 10-15 key points or facts (bullet points only, no paragraphs)\n"
-                "2. 2-3 relevant sources or references\n"
-                "3. A brief suggested structure (intro, 2-3 sections, conclusion)\n"
+                "1. **PII Remover** (`remove_pii`): Detects and redacts personally "
+                "identifiable information from text, including emails, phone numbers, "
+                "SSNs, credit card numbers, IP addresses, and dates of birth.\n"
                 "\n"
-                "Do NOT write paragraphs or detailed explanations. Just provide a focused list.",
+                "2. **Chart Generator** (`generate_chart`): Creates charts (bar, line, "
+                "pie, scatter, histogram) from JSON data and returns them as base64 "
+                "PNG images.\n"
+                "\n"
+                "3. **Data Analyzer** (`analyze_data`): Loads JSON data into a pandas "
+                "DataFrame and performs analysis operations like describe, head, filter, "
+                "groupby, value_counts, correlation, sort, and more.\n"
+                "\n"
+                "4. **Math Calculator** (`calculate`): Evaluates mathematical expressions "
+                "safely using Python's math library and numpy. Supports arithmetic, "
+                "trigonometry, logarithms, statistics, and linear algebra.\n"
+                "\n"
+                "## Guidelines\n"
+                "\n"
+                "- Use the appropriate tool for each task.\n"
+                "- When the user provides data, use the data analyzer or chart generator.\n"
+                "- When the user asks for calculations, use the math calculator.\n"
+                "- When the user asks to clean or redact PII, use the PII remover.\n"
+                "- You can chain tools: e.g., analyze data, then chart the results.\n"
+                "- Always explain what you did and present results clearly.\n"
             ),
-            name="planner_agent",
-        )
-
-    @property
-    def agent_writer(self) -> Any:
-        return create_agent(
-            self.llm(),
-            tools=self.mcp_tools + self._workflow_tools,
-            system_prompt=make_system_prompt(
-                "You are a content writer working with a planner colleague.\n"
-                "You write opinion pieces based on the planner's outline and context. You provide objective and "
-                "impartial insights backed by the planner's information. You acknowledge when your statements are "
-                "opinions versus objective facts.\n"
-                "\n"
-                "You have access to tools that can help you verify facts and gather additional supporting information. "
-                "Use these tools when required to ensure accuracy and find relevant details while writing.\n"
-                "\n"
-                "1. Use the content plan to craft a compelling blog post.\n"
-                "2. Structure with an engaging introduction, insightful body, and summarizing conclusion.\n"
-                "3. Sections/Subtitles are properly named in an engaging manner.\n"
-                "4. CRITICAL: Keep the total output under 500 words. Each section should have 1-2 brief paragraphs.\n"
-                "\n"
-                "Write in markdown format, ready for publication.",
-            ),
-            name="writer_agent",
+            name="agent",
         )
