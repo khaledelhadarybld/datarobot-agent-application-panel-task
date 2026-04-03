@@ -385,24 +385,32 @@ class MyAgent(LangGraphAgent):
         """Create the Modification Extraction Agent.
 
         Similar to the extraction agent, but specifically designed for order
-        modifications. It receives the full updated order description and
-        extracts items from it.
+        modifications. It computes the merged order totals first, then calls
+        the extraction tool with a clean merged order string.
         """
         return create_agent(
             self.llm(),
             tools=[extract_order_items] + self.mcp_tools + self._workflow_tools,
             system_prompt=make_system_prompt(
                 "You are the Extraction Agent for a restaurant order system.\n\n"
-                "Your ONLY job is to extract food items and quantities from the "
-                "provided order description using the extract_order_items tool.\n\n"
+                "Your job is to handle ORDER MODIFICATIONS. You will receive the "
+                "previous order and the customer's modification request.\n\n"
                 f"Our menu: {MENU}\n\n"
-                "You will receive a complete order description that already includes "
-                "all items (both previously ordered and newly added/modified items). "
-                "Extract ALL items from this description.\n\n"
-                "IMPORTANT: Always call the extract_order_items tool first.\n"
+                "CRITICAL STEPS — follow these exactly:\n"
+                "1. Read the PREVIOUS order items and quantities.\n"
+                "2. Read the customer's modification (add/remove/change items).\n"
+                "3. Compute the MERGED order by combining previous items with changes:\n"
+                "   - 'add 3 burgers' to existing 3 burgers = 6 burgers total\n"
+                "   - 'add 1 coke' to existing 5 cokes = 6 cokes total\n"
+                "   - 'remove coke' = remove coke from order\n"
+                "   - New items not in previous order are simply added.\n"
+                "4. Call extract_order_items with ONLY the FINAL merged order as a "
+                "simple sentence. Example: 'I want 2 pizzas, 6 burgers, and 6 cokes'\n"
+                "   Do NOT include the previous order text or modification text — "
+                "   ONLY the final merged totals.\n\n"
                 "After the tool returns, summarize the FULL updated order in a brief, "
-                "friendly sentence like: 'Your updated order: 2 pizzas, 3 burgers, and 5 cokes.'\n"
-                "Do NOT output raw JSON to the user. Always write a human-friendly summary."
+                "friendly sentence like: 'Your updated order: 2 pizzas, 6 burgers, and 6 cokes.'\n"
+                "Do NOT output raw JSON to the user."
             ),
             name="extraction_agent",
         )
@@ -613,11 +621,16 @@ class MyAgent(LangGraphAgent):
             # Build the full updated order from conversation history + modification
             previous_order = _extract_previous_order_from_history(state)
             combined_order = (
-                f"The customer's PREVIOUS order was: {previous_order}\n"
-                f"The customer now says: {user_message}\n\n"
-                "Please combine the previous order with the customer's requested changes "
-                "to build the COMPLETE updated order, then extract all items using the "
-                "extract_order_items tool. Include ALL items in the final order."
+                f"The customer's PREVIOUS order was:\n{previous_order}\n\n"
+                f"The customer now says: \"{user_message}\"\n\n"
+                "INSTRUCTIONS:\n"
+                "1. First, compute the MERGED order totals by combining the previous "
+                "order with the customer's changes. For example:\n"
+                "   - Previous: 3 burgers, 5 cokes. Customer: 'add 3 burgers and 1 coke'\n"
+                "   - Merged: 6 burgers, 6 cokes\n"
+                "2. Then call extract_order_items with ONLY the final merged totals "
+                "as a simple order sentence. Example: 'I want 6 burgers and 6 cokes'\n"
+                "   Do NOT pass the previous order text or modification request to the tool."
             )
             context_msg = HumanMessage(content=combined_order)
             result = self._modification_extraction_agent.invoke({"messages": [context_msg]})
