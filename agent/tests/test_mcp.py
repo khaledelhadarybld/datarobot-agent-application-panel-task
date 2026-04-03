@@ -42,10 +42,10 @@ def create_mock_mcp_tool(name: str):
 def _create_mock_astream():
     async def mock_astream(*args: Any, **kwargs: Any):
         yield (
-            "planner_node",
+            "agent_node",
             "updates",
             {
-                "planner_node": {
+                "agent_node": {
                     "messages": [AIMessage(content="Test response")],
                     "usage": {
                         "total_tokens": 0,
@@ -226,12 +226,11 @@ class TestMyAgentLangGraphMCPIntegration:
             agent = MyAgent(api_key="test_key", api_base="test_base", verbose=True)
             agent.set_mcp_tools(mock_tools)
 
-            _ = agent.agent_planner
-            _ = agent.agent_writer
+            _ = agent.agent_node
 
         assert agent._mcp_tools == mock_tools
-        assert access_count["count"] >= 2, (
-            f"Expected at least 2 accesses (one per agent), got {access_count['count']}"
+        assert access_count["count"] >= 1, (
+            f"Expected at least 1 access (agent_node), got {access_count['count']}"
         )
 
     @patch("datarobot_genai.langgraph.mcp.load_mcp_tools", new_callable=AsyncMock)

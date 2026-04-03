@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import type {
+  Message,
   ReasoningMessageChunkEvent,
   ReasoningMessageContentEvent,
   ReasoningMessageEndEvent,
@@ -11,8 +12,9 @@ import type {
   ToolCallEndEvent,
 } from '@ag-ui/core';
 import { EventType } from '@ag-ui/core';
-import type { ChatStateEventByType } from '@/types/events';
+import type { ChatStateEvent, ChatStateEventByType } from '@/types/events';
 import { MessageResponse } from '@/api/chat/types.ts';
+import type { ToolInvocationUIPart } from '@/types/message.ts';
 
 type AgUiTextEvent =
   | TextMessageStartEvent
@@ -217,6 +219,119 @@ function reasoningPart(reasoningText: string): {
     reasoning: reasoningText,
     details: reasoningText ? [{ type: 'text', text: reasoningText }] : [],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers for messageResponseToAgUiMessage
+// ---------------------------------------------------------------------------
+
+/** Pull the plain-text body out of a MessageContent, preferring the
+ *  top-level `content` field and falling back to the first text part. */
+function extractText(content: MessageResponse['content']): string {
+  if (content.content) return content.content;
+  const firstTextPart = content.parts.find(p => p.type === 'text');
+  return firstTextPart?.type === 'text' ? firstTextPart.text : '';
+}
+
+/** Return all tool-invocation UI parts found inside the content parts. */
+function collectToolInvocations(parts: MessageResponse['content']['parts']): ToolInvocationUIPart[] {
+  return parts.filter((p): p is ToolInvocationUIPart => p.type === 'tool-invocation');
+}
+
+/** Serialise a tool invocation's arguments into the string format AG-UI expects. */
+function serialiseArgs(args: unknown): string {
+  return typeof args === 'string' ? args : JSON.stringify(args ?? {});
+}
+
+// ---------------------------------------------------------------------------
+// Role-specific converters  (each returns Message | null)
+// ---------------------------------------------------------------------------
+
+type RoleConverter = (id: string, content: MessageResponse['content']) => Message | null;
+
+const roleConverters: Record<string, RoleConverter> = {
+  user: (id, content) => ({ id, role: 'user', content: extractText(content) }),
+  system: (id, content) => ({ id, role: 'system', content: extractText(content) }),
+  reasoning: (id, content) => ({ id, role: 'reasoning', content: content.content ?? '' }),
+
+  assistant(id, content) {
+    const toolParts = collectToolInvocations(content.parts);
+
+    if (toolParts.length > 0) {
+      return {
+        id,
+        role: 'assistant',
+        toolCalls: toolParts.map(({ toolInvocation }) => ({
+          id: toolInvocation.toolCallId ?? id,
+          type: 'function' as const,
+          function: {
+            name: toolInvocation.toolName,
+            arguments: serialiseArgs(toolInvocation.args),
+          },
+        })),
+      };
+    }
+
+    return { id, role: 'assistant', content: extractText(content) };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Transform an internal {@link MessageResponse} into the AG-UI {@link Message}
+ * format so it can be included in the conversation context sent to the agent.
+ *
+ * @param message - The app-level message to convert.
+ * @returns The AG-UI message, or `null` when the role is unrecognised.
+ */
+export function messageResponseToAgUiMessage(message: MessageResponse): Message | null {
+  const converter = roleConverters[message.role];
+  return converter ? converter(message.id, message.content) : null;
+}
+
+/**
+ * Assemble the full, ordered conversation for the agent by merging persisted
+ * history with in-session events and appending the latest user turn.
+ *
+ * Duplicates (messages already present in history that also appear in the
+ * session) are removed so each message is sent exactly once.
+ *
+ * @param history  - Previously persisted messages (may be empty for new chats).
+ * @param sessionEvents - Events accumulated in the current browser session.
+ * @param userTurn - The new user message being sent right now.
+ * @returns A deduped, chronologically ordered array of AG-UI Messages.
+ */
+export function buildConversationMessages(
+  history: MessageResponse[],
+  sessionEvents: ChatStateEvent[],
+  userTurn: { id: string; content: string },
+): Message[] {
+  console.log("buildConversationMessages", history, sessionEvents, userTurn);
+  const fromHistory = history
+    .map(messageResponseToAgUiMessage)
+    .filter((m): m is Message => m !== null);
+
+  const fromSession = sessionEvents
+    .filter((e): e is ChatStateEventByType<'message'> => e.type === 'message')
+    .map(e => messageResponseToAgUiMessage(e.value))
+    .filter((m): m is Message => m !== null);
+
+  const knownIds = new Set(fromHistory.map(m => m.id));
+  // Only include user messages from session events that aren't already in history.
+  // Assistant/tool messages are persisted by the backend storage layer during the
+  // agent run, so sending them again would trigger "cannot create new non-user messages".
+  const uniqueSessionMessages = fromSession.filter(
+    m => !knownIds.has(m.id) && m.role === 'user'
+  );
+
+  return [
+    ...fromHistory,
+    ...uniqueSessionMessages,
+    { id: userTurn.id, role: 'user', content: userTurn.content },
+  ];
 }
 
 export function createReasoningMessage(

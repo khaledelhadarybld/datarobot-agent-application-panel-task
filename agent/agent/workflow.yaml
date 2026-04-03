@@ -1,53 +1,61 @@
 ---
-# Copyright 2025 DataRobot, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 general:
   front_end:
     _type: dragent_fastapi
-    # Step adaptor is not necessary for custom agents
     step_adaptor:
       mode: 'off'
-    # If you don't want your agent to expose A2A endpoints, remove the following block.
     a2a:
       server:
-        name: Blog Content Writer
-        description: An AI content writing agent that researches and writes well-structured blog posts. Provide a topic and
-          it will generate a concise, publication-ready article in markdown format.
-      skills:  # Optional: advertise specific skills in the agent card
-        - id: write_blog
-          name: Write Blog Post
-          description: Researches and writes a blog post on the given topic.
-          tags: []
+        name: Data Processing Assistant
+        description: >
+          A multi-agent data-processing assistant with specialized tools for
+          data analysis, chart generation, math calculations, and PII removal.
+          Orchestrated by a supervisor node with conditional LangGraph edges.
+      skills:
+        - id: data_analysis
+          name: Analyse Data
+          description: >
+            Explores, summarises, filters, groups, and statistically analyses
+            tabular or JSON data using pandas DataFrame operations.
+          tags: [data, analysis, pandas]
           examples:
-            - Write a blog post about the future of AI in healthcare
-            - Create an article about sustainable energy trends
-# To connect this agent to a remote A2A agent, uncomment the block below and add the
-# function group name to the workflow's tool_names list.
-# function_groups:
-#   remote_agent:
-#     _type: authenticated_a2a_client
-#     url: "https://app.datarobot.com/api/v2/deployments/<deployment-id>/directAccess/a2a/"
-#     auth_provider: datarobot_auth
+            - 'Describe this dataset: [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]'
+            - Filter rows where age > 25 from this data.
+        - id: visualization
+          name: Generate Charts
+          description: >
+            Creates bar, line, pie, scatter, and histogram charts from JSON data.
+          tags: [chart, visualization, plot]
+          examples:
+            - 'Create a bar chart from this data: {"x": ["A", "B", "C"], "y": [10, 20, 30]}'
+            - Plot a pie chart of sales by region.
+        - id: math_calculation
+          name: Calculate
+          description: >
+            Evaluates mathematical expressions using Python's math library and numpy.
+            Supports arithmetic, trigonometry, logarithms, statistics, and linear algebra.
+          tags: [math, calculation, statistics]
+          examples: [Calculate sqrt(144) + log(100), 'What is the mean of [10, 20, 30, 40, 50]?']
+        - id: pii_removal
+          name: Remove PII
+          description: >
+            Detects and redacts personally identifiable information from text,
+            including emails, phone numbers, SSNs, credit card numbers, and IP addresses.
+          tags: [pii, privacy, redaction]
+          examples:
+            - 'Remove PII from: Contact john@example.com or call 555-123-4567'
+            - Redact personal information from this text.
 llms:
   datarobot_llm:
     _type: datarobot-llm-component
 workflow:
   _type: langgraph_agent
   llm_name: datarobot_llm
-  description: LangGraph planner/writer agent
-  # tool_names:
-  #   - remote_agent
+  description: >
+    Multi-agent data-processing workflow with supervisor-based routing.
+    Specialist agents: Data Analysis (pandas), Visualization (charts),
+    Math Calculation (numpy/math), and PII Removal. Orchestrated by a
+    deterministic supervisor node with conditional LangGraph edges.
 authentication:
   datarobot_auth:
     _type: datarobot_api_key
