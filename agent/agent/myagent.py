@@ -13,21 +13,25 @@
 # limitations under the License.
 """Smart Order Assistant — multi-agent food ordering workflow.
 
-A beginner-friendly LangGraph workflow with 6 nodes that process a food order:
+A LangGraph workflow with 6 nodes that process a food order:
 
-  0. intake_node         : Quick check — is this a food order, a confirmation, or a greeting?
+  0. intake_node         : LLM-based intent classification (order, modification,
+                           confirmation, cancellation, or greeting).
   1. extraction_node     : Extracts items and quantities from the user's message.
+                           For modifications, merges with the previous order.
   2. validation_node     : Checks items exist on the menu and quantity <= 10.
   3. pricing_node        : Calculates the total price (only if validation passes).
-  4. confirmation_node   : Human-in-the-loop — processes user's yes/no confirmation.
-  5. final_response_node : Returns a friendly confirmation or error message.
+  4. confirmation_node   : Processes explicit user confirmation → finalizes order.
+  5. final_response_node : Returns a friendly confirmation, summary, or error message.
 
 Conditional routing:
-  - If intake detects NO order intent and NO confirmation → final_response_node (greeting)
-  - If intake detects a confirmation reply → confirmation_node
-  - If validation fails → skip pricing & confirmation → final_response_node
-  - After pricing → final_response_node asks user to confirm (multi-turn)
-  - On next turn, user says "yes"/"no" → confirmation_node → final_response_node
+  - If intake detects a greeting → final_response_node (conversational reply)
+  - If intake detects a new order or modification → extraction_node
+  - If intake detects an explicit confirmation → confirmation_node
+  - If intake detects a cancellation → final_response_node (cancellation message)
+  - If validation fails → skip pricing → final_response_node (show errors)
+  - After pricing → final_response_node (ask user to confirm)
+  - After confirmation → final_response_node (show confirmed order)
 
 Example menu:
   - pizza  = $10
@@ -36,7 +40,6 @@ Example menu:
 """
 
 import json
-import re
 from typing import Any, Literal, Optional, Union
 
 from ag_ui.core import RunAgentInput
@@ -102,39 +105,52 @@ class OrderState(MessagesState):
     # Whether the user is replying to a confirmation prompt (yes/no)
     is_confirmation_reply: bool
 
+    # Whether the user wants to modify an existing order
+    is_modification: bool
+
+    # Whether the user wants to cancel the order
+    is_cancellation: bool
+
+    # The intent classified by the LLM intake node
+    intent: str
+
+
+# ---------------------------------------------------------------------------
+# Intent classification prompt for the intake node
+# ---------------------------------------------------------------------------
+INTAKE_CLASSIFICATION_PROMPT = (
+    "You are an intent classifier for a restaurant order system.\n"
+    "Classify the customer's message into exactly ONE of these intents:\n\n"
+    "- **new_order**: The customer wants to place a new food order "
+    "(mentions menu items, quantities, or ordering phrases).\n"
+    "- **modification**: The customer wants to CHANGE an existing order "
+    "(add items, remove items, change quantities). This includes replies "
+    "like 'no, add 3 burgers' or 'actually, change to 5 pizzas' or "
+    "'can you add a coke?' when there is already a pending order.\n"
+    "- **confirmation**: The customer is explicitly confirming the order "
+    "with NO modifications (e.g., just 'yes', 'confirm', 'go ahead', "
+    "'sure', 'yep', 'ok').\n"
+    "- **cancellation**: The customer clearly wants to cancel the entire "
+    "order with NO new items (e.g., just 'no', 'cancel', 'never mind').\n"
+    "- **greeting**: General conversation, greeting, or question that is "
+    "not about placing/modifying an order.\n\n"
+    "CRITICAL RULES:\n"
+    "- If the message contains BOTH a negative word (no, nah) AND mentions "
+    "food items or modifications, classify as **modification**, NOT cancellation.\n"
+    "- 'No, add 3 burgers' → modification\n"
+    "- 'No, I want 5 pizzas instead' → modification\n"
+    "- 'No thanks' → cancellation\n"
+    "- 'No' (alone) → cancellation\n"
+    "- 'Can you add a coke?' → modification (if there's an existing order)\n\n"
+    "Respond with ONLY the intent name (one word): "
+    "new_order, modification, confirmation, cancellation, or greeting.\n"
+    "Do not add any other text."
+)
+
 
 # ---------------------------------------------------------------------------
 # Conditional routing functions
 # ---------------------------------------------------------------------------
-
-
-# Keywords that suggest the user is trying to place a food order
-ORDER_KEYWORDS = [
-    # Menu item names (and common plurals)
-    "pizza",
-    "pizzas",
-    "burger",
-    "burgers",
-    "coke",
-    "cokes",
-    # Order-related verbs / phrases
-    "order",
-    "want",
-    "give me",
-    "i'd like",
-    "i would like",
-    "can i get",
-    "can i have",
-    "get me",
-    "bring me",
-    "add",
-    "buy",
-    "purchase",
-]
-
-# Keywords that indicate the user is confirming or cancelling an order
-CONFIRM_KEYWORDS = ["yes", "yeah", "yep", "sure", "confirm", "ok", "okay", "go ahead"]
-CANCEL_KEYWORDS = ["no", "nah", "nope", "cancel", "nevermind", "never mind", "stop"]
 
 
 def _route_after_intake(
@@ -142,13 +158,16 @@ def _route_after_intake(
 ) -> Literal["extraction_node", "confirmation_node", "final_response_node"]:
     """Decide where to go after the intake check.
 
-    If the user is confirming/cancelling → confirmation_node
-    If the message looks like a food order → extraction_node
-    If it's just a greeting / question    → final_response_node
+    Routes based on LLM-classified intent:
+      - confirmation → confirmation_node
+      - new_order or modification → extraction_node
+      - cancellation or greeting → final_response_node
     """
-    if state.get("is_confirmation_reply", False):
+    intent = state.get("intent", "greeting")
+
+    if intent == "confirmation" and state.get("is_confirmation_reply", False):
         return "confirmation_node"
-    if state.get("has_order_intent", False):
+    if intent in ("new_order", "modification"):
         return "extraction_node"
     return "final_response_node"
 
@@ -159,7 +178,7 @@ def _route_after_validation(
     """Decide where to go after validation.
 
     If the order is valid   → continue to pricing_node
-    If the order is invalid → skip pricing & confirmation, go to final_response_node
+    If the order is invalid → skip pricing, go to final_response_node
     """
     if state.get("is_valid", False):
         return "pricing_node"
@@ -178,6 +197,9 @@ class MyAgent(LangGraphAgent):
     Processes food orders through extraction → validation → pricing →
     (ask for confirmation) → confirmation → final response, with conditional
     routing that skips pricing/confirmation when validation fails.
+
+    The intake node uses LLM-based intent classification to correctly handle
+    order modifications (e.g., "no, add 3 burgers") without keyword matching.
     """
 
     def __init__(
@@ -359,6 +381,33 @@ class MyAgent(LangGraphAgent):
         )
 
     @property
+    def _modification_extraction_agent(self) -> Any:
+        """Create the Modification Extraction Agent.
+
+        Similar to the extraction agent, but specifically designed for order
+        modifications. It receives the full updated order description and
+        extracts items from it.
+        """
+        return create_agent(
+            self.llm(),
+            tools=[extract_order_items] + self.mcp_tools + self._workflow_tools,
+            system_prompt=make_system_prompt(
+                "You are the Extraction Agent for a restaurant order system.\n\n"
+                "Your ONLY job is to extract food items and quantities from the "
+                "provided order description using the extract_order_items tool.\n\n"
+                f"Our menu: {MENU}\n\n"
+                "You will receive a complete order description that already includes "
+                "all items (both previously ordered and newly added/modified items). "
+                "Extract ALL items from this description.\n\n"
+                "IMPORTANT: Always call the extract_order_items tool first.\n"
+                "After the tool returns, summarize the FULL updated order in a brief, "
+                "friendly sentence like: 'Your updated order: 2 pizzas, 3 burgers, and 5 cokes.'\n"
+                "Do NOT output raw JSON to the user. Always write a human-friendly summary."
+            ),
+            name="extraction_agent",
+        )
+
+    @property
     def _validation_agent(self) -> Any:
         """Create the Validation Agent.
 
@@ -413,19 +462,19 @@ class MyAgent(LangGraphAgent):
     def _confirmation_agent(self) -> Any:
         """Create the Confirmation Agent.
 
-        This agent processes the user's yes/no reply to confirm or cancel.
+        This agent processes the user's explicit confirmation to finalize.
         """
         return create_agent(
             self.llm(),
             tools=[confirm_order] + self.mcp_tools + self._workflow_tools,
             system_prompt=make_system_prompt(
                 "You are the Confirmation Agent for a restaurant order system.\n\n"
-                "Your ONLY job is to confirm or cancel the order using the "
+                "Your ONLY job is to confirm the order using the "
                 "confirm_order tool.\n\n"
                 "You will receive the pricing data. Call the confirm_order tool "
                 "with it to finalize the order.\n"
                 "After the tool returns, say something like: "
-                "'Your order has been confirmed!' or 'Order cancelled.'\n"
+                "'Your order has been confirmed!'\n"
                 "Do NOT output raw JSON."
             ),
             name="confirmation_agent",
@@ -456,53 +505,81 @@ class MyAgent(LangGraphAgent):
 
     # ------------------------------------------------------------------
     # Node wrappers — each node runs its sub-agent and stores results
-    #
-    # Intermediate nodes use create_agent so tool calls are visible in
-    # the UI via AG-UI ToolCallEndEvent. Sub-agent prompts instruct the
-    # LLM to produce human-friendly summaries (not raw JSON).
     # ------------------------------------------------------------------
 
     def _intake_node(self, state: OrderState) -> dict[str, Any]:
-        """Step 0: Quick keyword check — is this a food order, confirmation, or greeting?
+        """Step 0: LLM-based intent classification.
 
-        This is a lightweight, deterministic check (no LLM call) that scans
-        the user's message for order-related keywords or confirmation keywords.
+        Uses the LLM to classify the user's message into one of:
+          - new_order: placing a new food order
+          - modification: modifying an existing pending order
+          - confirmation: explicitly confirming a pending order
+          - cancellation: explicitly cancelling with no modifications
+          - greeting: general conversation
 
-        Routes to:
-          - confirmation_node: if user is replying yes/no to a pending order
-          - extraction_node: if user is placing a new order
-          - final_response_node: if it's just a greeting or question
+        This replaces brittle keyword matching and correctly handles
+        nuanced messages like "no, add 3 burgers please".
         """
         user_message = _extract_latest_user_message(state)
-        user_lower = user_message.lower().strip()
 
-        # Check if the previous assistant message was asking for confirmation
-        is_awaiting_confirmation = _is_awaiting_confirmation(state)
-
-        # Check if this is a confirmation/cancellation reply
-        # Use word-boundary regex to avoid false positives like "ok" in "cokes"
-        is_confirmation_reply = False
-        if is_awaiting_confirmation:
-            is_confirm = any(
-                re.search(r"\b" + re.escape(kw) + r"\b", user_lower)
-                for kw in CONFIRM_KEYWORDS
+        # Build context about whether there's a pending order
+        has_pending_order = _has_pending_order(state)
+        context = ""
+        if has_pending_order:
+            context = (
+                "\n\nCONTEXT: There is a pending order that the customer was asked "
+                "to confirm. The customer's reply may be a confirmation, cancellation, "
+                "or a request to modify the order."
             )
-            is_cancel = any(
-                re.search(r"\b" + re.escape(kw) + r"\b", user_lower)
-                for kw in CANCEL_KEYWORDS
-            )
-            if is_confirm or is_cancel:
-                is_confirmation_reply = True
 
-        # Check if any order-related keyword appears in the message
-        has_order_intent = any(kw in user_lower for kw in ORDER_KEYWORDS)
+        # Use the LLM to classify intent
+        classification_prompt = (
+            f"{INTAKE_CLASSIFICATION_PROMPT}{context}\n\n"
+            f"Customer message: \"{user_message}\""
+        )
+
+        llm = self.llm()
+        response = llm.invoke(classification_prompt)
+        intent_raw = response.content if isinstance(response.content, str) else str(response.content)
+        intent = intent_raw.strip().lower()
+
+        # Normalize the intent to one of the known values
+        valid_intents = {"new_order", "modification", "confirmation", "cancellation", "greeting"}
+        if intent not in valid_intents:
+            # Fallback: if the LLM returned something unexpected, try to parse it
+            for valid in valid_intents:
+                if valid in intent:
+                    intent = valid
+                    break
+            else:
+                intent = "greeting"
+
+        # Map intent to state flags
+        has_order_intent = intent in ("new_order", "modification")
+        is_confirmation_reply = intent == "confirmation" and has_pending_order
+        is_modification = intent == "modification"
+        is_cancellation = intent == "cancellation"
+
+        # If classified as confirmation but no pending order, treat as greeting
+        if intent == "confirmation" and not has_pending_order:
+            is_confirmation_reply = False
+            has_order_intent = False
+            intent = "greeting"
+
+        # If classified as cancellation but no pending order, treat as greeting
+        if intent == "cancellation" and not has_pending_order:
+            is_cancellation = False
+            intent = "greeting"
 
         if self.verbose:
             print(
                 f"[intake_node] message='{user_message}', "
+                f"intent={intent}, "
                 f"has_order_intent={has_order_intent}, "
                 f"is_confirmation_reply={is_confirmation_reply}, "
-                f"is_awaiting_confirmation={is_awaiting_confirmation}"
+                f"is_modification={is_modification}, "
+                f"is_cancellation={is_cancellation}, "
+                f"has_pending_order={has_pending_order}"
             )
 
         completed = list(state.get("completed_steps", []))
@@ -510,32 +587,51 @@ class MyAgent(LangGraphAgent):
             completed.append("intake")
 
         return {
+            "intent": intent,
             "has_order_intent": has_order_intent,
             "is_confirmation_reply": is_confirmation_reply,
+            "is_modification": is_modification,
+            "is_cancellation": is_cancellation,
             "completed_steps": completed,
         }
 
     def _extraction_node(self, state: OrderState) -> dict[str, Any]:
         """Step 1: Extract items and quantities from the user's order message.
 
-        Uses the extraction sub-agent (LLM + tool) so the tool call is
-        visible in the UI.
+        For new orders: extracts items from the current message.
+        For modifications: builds the complete updated order by combining
+        previous items from conversation history with the requested changes,
+        then extracts items from that combined description.
         """
         user_message = _extract_latest_user_message(state)
+        is_modification = state.get("is_modification", False)
 
         if self.verbose:
-            print(f"[extraction_node] Input: {user_message}")
+            print(f"[extraction_node] Input: {user_message}, is_modification={is_modification}")
 
-        # Ask the extraction agent to parse the user's order
-        context_msg = HumanMessage(
-            content=(
-                f"The customer said: {user_message}\n\n"
-                "Please extract the food items and quantities from this message "
-                "using the extract_order_items tool. After calling the tool, "
-                "summarize what you found in a brief friendly sentence."
+        if is_modification:
+            # Build the full updated order from conversation history + modification
+            previous_order = _extract_previous_order_from_history(state)
+            combined_order = (
+                f"The customer's PREVIOUS order was: {previous_order}\n"
+                f"The customer now says: {user_message}\n\n"
+                "Please combine the previous order with the customer's requested changes "
+                "to build the COMPLETE updated order, then extract all items using the "
+                "extract_order_items tool. Include ALL items in the final order."
             )
-        )
-        result = self._extraction_agent.invoke({"messages": [context_msg]})
+            context_msg = HumanMessage(content=combined_order)
+            result = self._modification_extraction_agent.invoke({"messages": [context_msg]})
+        else:
+            # New order — extract from current message
+            context_msg = HumanMessage(
+                content=(
+                    f"The customer said: {user_message}\n\n"
+                    "Please extract the food items and quantities from this message "
+                    "using the extract_order_items tool. After calling the tool, "
+                    "summarize what you found in a brief friendly sentence."
+                )
+            )
+            result = self._extraction_agent.invoke({"messages": [context_msg]})
 
         # Get the raw tool output (JSON) from the result
         extracted_json = _extract_tool_output(result, "extract_order_items")
@@ -641,47 +737,30 @@ class MyAgent(LangGraphAgent):
         }
 
     def _confirmation_node(self, state: OrderState) -> dict[str, Any]:
-        """Step 4: Process the user's confirmation reply (yes/no).
+        """Step 4: Process the user's explicit confirmation.
 
-        This node is reached when the user replies to a confirmation prompt.
-        It extracts the order summary from the conversation history and
-        builds the confirmation result.
+        This node is only reached when the LLM intake classified the
+        message as an explicit confirmation. It extracts order details
+        from conversation history and builds the confirmation result.
         """
         user_message = _extract_latest_user_message(state)
-        user_lower = user_message.lower().strip()
-
-        # Determine if user confirmed or cancelled
-        is_confirmed = any(kw in user_lower for kw in CONFIRM_KEYWORDS)
 
         if self.verbose:
-            print(
-                f"[confirmation_node] user_message='{user_message}', "
-                f"is_confirmed={is_confirmed}"
-            )
+            print(f"[confirmation_node] user_message='{user_message}'")
 
-        if not is_confirmed:
-            # User cancelled — store cancellation result
-            confirmation_json = json.dumps(
-                {
-                    "confirmed": False,
-                    "message": "Order cancelled by customer.",
-                    "grand_total": 0,
-                }
-            )
-        else:
-            # User confirmed — extract the grand total and order summary
-            # from the conversation history (human-readable AI messages)
-            grand_total = _extract_total_from_history(state)
-            order_summary = _extract_order_summary_from_history(state)
+        # User confirmed — extract the grand total and order summary
+        # from the conversation history (human-readable AI messages)
+        grand_total = _extract_total_from_history(state)
+        order_summary = _extract_order_summary_from_history(state)
 
-            confirmation_json = json.dumps(
-                {
-                    "confirmed": True,
-                    "message": "Order confirmed!",
-                    "grand_total": grand_total,
-                    "order_summary": order_summary,
-                }
-            )
+        confirmation_json = json.dumps(
+            {
+                "confirmed": True,
+                "message": "Order confirmed!",
+                "grand_total": grand_total,
+                "order_summary": order_summary,
+            }
+        )
 
         if self.verbose:
             print(f"[confirmation_node] Output: {confirmation_json}")
@@ -692,7 +771,7 @@ class MyAgent(LangGraphAgent):
 
         return {
             "confirmation_result": confirmation_json,
-            "is_valid": is_confirmed,
+            "is_valid": True,
             "completed_steps": completed,
         }
 
@@ -702,24 +781,28 @@ class MyAgent(LangGraphAgent):
         This is the terminal node. It uses the LLM to stream the response
         back to the user via AG-UI events.
 
-        Handles 4 scenarios:
+        Handles 5 scenarios:
         - Greeting (no order): conversational reply with menu
         - Valid order (not yet confirmed): show summary + ask for confirmation
         - Confirmed order: show confirmation message
+        - Cancelled order: polite cancellation message
         - Invalid order: show errors + menu
         """
         is_valid = state.get("is_valid", False)
         is_confirmation_reply = state.get("is_confirmation_reply", False)
+        is_cancellation = state.get("is_cancellation", False)
         has_order_intent = state.get("has_order_intent", False)
+        intent = state.get("intent", "greeting")
 
         if self.verbose:
             print(
-                f"[final_response_node] is_valid={is_valid}, "
+                f"[final_response_node] intent={intent}, is_valid={is_valid}, "
                 f"is_confirmation_reply={is_confirmation_reply}, "
+                f"is_cancellation={is_cancellation}, "
                 f"has_order_intent={has_order_intent}"
             )
 
-        # Scenario 1: User just confirmed/cancelled an order
+        # Scenario 1: User just confirmed an order
         if is_confirmation_reply:
             confirmation_data = state.get("confirmation_result", "{}")
             try:
@@ -737,10 +820,8 @@ class MyAgent(LangGraphAgent):
                     )
                 else:
                     prompt = (
-                        "You are a Smart Order Assistant. The customer cancelled "
-                        "their order. Respond politely and let them know they can "
-                        "order again anytime.\n\n"
-                        "Keep it short and friendly — 1-2 sentences."
+                        "You are a Smart Order Assistant. Something went wrong. "
+                        "Apologize and ask the customer to try again."
                     )
             except (json.JSONDecodeError, TypeError):
                 prompt = (
@@ -750,7 +831,18 @@ class MyAgent(LangGraphAgent):
             self.llm().invoke(prompt)
             return {}
 
-        # Scenario 2: Valid order just priced — ask for confirmation
+        # Scenario 2: User cancelled the order
+        if is_cancellation:
+            prompt = (
+                "You are a Smart Order Assistant. The customer cancelled "
+                "their order. Respond politely and let them know they can "
+                "order again anytime.\n\n"
+                "Keep it short and friendly — 1-2 sentences."
+            )
+            self.llm().invoke(prompt)
+            return {}
+
+        # Scenario 3: Valid order just priced — ask for confirmation
         if is_valid and has_order_intent:
             pricing_data = state.get("pricing_result", "{}")
             prompt = (
@@ -769,7 +861,7 @@ class MyAgent(LangGraphAgent):
             self.llm().invoke(prompt)
             return {}
 
-        # Scenario 3: Invalid order — show errors
+        # Scenario 4: Invalid order — show errors
         if has_order_intent and not is_valid:
             validation_data = state.get("validation_result", "{}")
             prompt = (
@@ -786,7 +878,7 @@ class MyAgent(LangGraphAgent):
             self.llm().invoke(prompt)
             return {}
 
-        # Scenario 4: Greeting / general message — respond conversationally
+        # Scenario 5: Greeting / general message — respond conversationally
         user_message = _extract_latest_user_message(state)
         prompt = (
             "You are a friendly Smart Order Assistant for a restaurant.\n"
@@ -812,12 +904,12 @@ class MyAgent(LangGraphAgent):
         """Build the LangGraph workflow for the Smart Order Assistant.
 
         The flow is:
-          START → intake → [conditional: what kind of message?]
-            ├─ order intent → extraction → validation → [conditional: valid?]
+          START → intake → [conditional: what is the intent?]
+            ├─ new_order / modification → extraction → validation → [conditional: valid?]
             │                   ├─ valid   → pricing → final_response (ask confirm) → END
             │                   └─ invalid → final_response (show errors) → END
-            ├─ confirmation reply → confirmation → final_response (confirmed/cancelled) → END
-            └─ greeting → final_response (conversational) → END
+            ├─ confirmation → confirmation → final_response (confirmed) → END
+            └─ cancellation / greeting → final_response → END
         """
         graph: StateGraph[OrderState] = StateGraph(OrderState)
 
@@ -835,9 +927,6 @@ class MyAgent(LangGraphAgent):
         graph.add_edge(START, "intake_node")
 
         # After intake, use conditional routing:
-        #   - If confirmation reply → go to confirmation node
-        #   - If order intent → go to extraction
-        #   - Otherwise → go to final response (conversational)
         graph.add_conditional_edges(
             "intake_node",
             _route_after_intake,
@@ -852,8 +941,6 @@ class MyAgent(LangGraphAgent):
         graph.add_edge("extraction_node", "validation_node")
 
         # After validation, use conditional routing:
-        #   - If valid → go to pricing
-        #   - If invalid → skip to final response
         graph.add_conditional_edges(
             "validation_node",
             _route_after_validation,
@@ -925,11 +1012,7 @@ class MyAgent(LangGraphAgent):
 
 
 def _last_ai_content(result: Any) -> str:
-    """Extract the last AI message content from a react-agent result dict.
-
-    When a sub-agent finishes, its result contains a list of messages.
-    This function finds the last message from the AI and returns its text.
-    """
+    """Extract the last AI message content from a react-agent result dict."""
     msgs = result.get("messages", [])
     for msg in reversed(msgs):
         if isinstance(msg, AIMessage):
@@ -939,11 +1022,7 @@ def _last_ai_content(result: Any) -> str:
 
 
 def _extract_latest_user_message(state: OrderState) -> str:
-    """Extract the latest user message from the conversation.
-
-    Looks through the message history backwards to find the most recent
-    message from the human user.
-    """
+    """Extract the latest user message from the conversation."""
     messages = state.get("messages", [])
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
@@ -953,18 +1032,7 @@ def _extract_latest_user_message(state: OrderState) -> str:
 
 
 def _extract_tool_output(result: Any, tool_name: str) -> str:
-    """Try to extract the raw output of a specific tool from agent results.
-
-    Sub-agents produce ToolMessage objects when they call tools. This
-    function looks for the output of a specific tool by name.
-
-    Args:
-        result: The result dict from invoking a sub-agent.
-        tool_name: The name of the tool whose output we want.
-
-    Returns:
-        The tool's output string, or empty string if not found.
-    """
+    """Try to extract the raw output of a specific tool from agent results."""
     msgs = result.get("messages", [])
     for msg in reversed(msgs):
         if hasattr(msg, "name") and msg.name == tool_name:
@@ -973,34 +1041,26 @@ def _extract_tool_output(result: Any, tool_name: str) -> str:
     return ""
 
 
-def _is_awaiting_confirmation(state: OrderState) -> bool:
-    """Check if the previous assistant message was asking for order confirmation.
+def _has_pending_order(state: OrderState) -> bool:
+    """Check if there is a pending order in the conversation history.
 
-    Looks at the conversation history to see if the last AI message
-    contains confirmation-related phrases like "confirm" or "yes to confirm".
-
-    IMPORTANT: We skip the current user's HumanMessage (the latest one)
-    because we need to look at the AI message BEFORE it. We also skip
-    SystemMessages (from the prompt template) that may appear between
-    the AIMessage and HumanMessage.
+    Looks at AI messages to see if the assistant previously presented an
+    order summary and asked for confirmation.
     """
     messages = state.get("messages", [])
+    # Skip the current user message (the latest one) and look at previous AI messages
     skipped_first_human = False
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             if not skipped_first_human:
-                # Skip the current user message (e.g., "yes")
                 skipped_first_human = True
                 continue
             else:
-                # Hit a second user message without finding an AI message — stop
                 break
         if isinstance(msg, AIMessage):
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
             content_lower = content.lower()
-            # Check if the AI was asking for ORDER confirmation specifically.
-            # We require "confirm" to appear alongside an order-related word
-            # to avoid false positives like "would you like to order?"
+            # Check if the AI was asking for order confirmation
             has_confirm_word = any(
                 phrase in content_lower
                 for phrase in [
@@ -1012,58 +1072,24 @@ def _is_awaiting_confirmation(state: OrderState) -> bool:
                     "reply yes to confirm",
                 ]
             )
-            # Fallback: "confirm" + ("order" or "total") in the same message
             if not has_confirm_word:
                 has_confirm_word = (
                     "confirm" in content_lower
                     and ("order" in content_lower or "total" in content_lower)
                 )
-            if has_confirm_word:
-                return True
-            # Found an AI message but it wasn't asking for confirmation
-            return False
+            return has_confirm_word
     return False
-
-
-def _extract_pricing_from_history(state: OrderState) -> str:
-    """Try to extract pricing JSON from the conversation history.
-
-    When the user confirms, we need to find the pricing data from a
-    previous turn. This looks through AI messages for JSON-like content
-    containing pricing information.
-    """
-    messages = state.get("messages", [])
-    for msg in reversed(messages):
-        if isinstance(msg, AIMessage):
-            content = msg.content if isinstance(msg.content, str) else str(msg.content)
-            # Try to find JSON with pricing data in the message
-            try:
-                # Look for JSON blocks in the content
-                if "grand_total" in content or "line_items" in content:
-                    # Try to extract JSON from the content
-                    start = content.find("{")
-                    end = content.rfind("}") + 1
-                    if start >= 0 and end > start:
-                        json_str = content[start:end]
-                        data = json.loads(json_str)
-                        if "grand_total" in data or "line_items" in data:
-                            return json_str
-            except (json.JSONDecodeError, TypeError):
-                pass
-    return ""
 
 
 def _extract_total_from_history(state: OrderState) -> int:
     """Extract the grand total from human-readable AI messages in conversation history.
 
-    Scans AI messages for patterns like "Total: 59 dollars", "Grand Total: 59 dollars",
-    or "💰 Grand Total: 59 dollars". Returns the total as an integer, or 0 if not found.
-
-    This is needed because the pricing data is presented as human-readable text
-    (not JSON) in the conversation, and state is not persisted between turns.
+    Scans AI messages for patterns like "Total: 59 dollars", "Grand Total: 59 dollars".
+    Returns the total as an integer, or 0 if not found.
     """
+    import re
+
     messages = state.get("messages", [])
-    # Patterns to match total amounts in AI messages
     total_patterns = [
         r"(?:grand\s+)?total[:\s]+(\d+)\s*dollars",
         r"💰\s*(?:grand\s+)?total[:\s]+(\d+)\s*dollars",
@@ -1087,15 +1113,13 @@ def _extract_order_summary_from_history(state: OrderState) -> str:
     """Extract the order summary text from the AI's confirmation prompt message.
 
     Looks for the AI message that contains the order summary (the one with
-    emojis and line items that asked the user to confirm). Returns the full
-    text of that message so it can be included in the confirmation data.
+    emojis and line items that asked the user to confirm).
     """
     messages = state.get("messages", [])
     for msg in reversed(messages):
         if isinstance(msg, AIMessage):
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
             content_lower = content.lower()
-            # The order summary message contains "confirm" and item details
             if "confirm" in content_lower and (
                 "pizza" in content_lower
                 or "burger" in content_lower
@@ -1104,3 +1128,27 @@ def _extract_order_summary_from_history(state: OrderState) -> str:
             ):
                 return content
     return ""
+
+
+def _extract_previous_order_from_history(state: OrderState) -> str:
+    """Extract the previous order details from conversation history.
+
+    Looks for the most recent AI message that contains order item details
+    (the order summary that was presented to the user). This is used when
+    the user requests a modification so we can merge previous items with
+    the new changes.
+    """
+    messages = state.get("messages", [])
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage):
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            content_lower = content.lower()
+            # Look for messages that contain order items (menu item names + quantities/prices)
+            has_menu_items = any(item in content_lower for item in MENU)
+            has_order_indicators = any(
+                indicator in content_lower
+                for indicator in ["total", "order", "dollars", "quantity", "price"]
+            )
+            if has_menu_items and has_order_indicators:
+                return content
+    return "No previous order found."

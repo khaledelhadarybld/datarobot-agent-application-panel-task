@@ -22,17 +22,15 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from agent import MyAgent
 from agent.myagent import (
-    CANCEL_KEYWORDS,
-    CONFIRM_KEYWORDS,
+    INTAKE_CLASSIFICATION_PROMPT,
     MENU,
-    ORDER_KEYWORDS,
     OrderState,
     _extract_latest_user_message,
     _extract_order_summary_from_history,
-    _extract_pricing_from_history,
+    _extract_previous_order_from_history,
     _extract_tool_output,
     _extract_total_from_history,
-    _is_awaiting_confirmation,
+    _has_pending_order,
     _last_ai_content,
     _route_after_intake,
     _route_after_validation,
@@ -401,28 +399,17 @@ class TestMyAgentLangGraph:
         assert MENU == {"pizza": 10, "burger": 8, "coke": 3}
 
     # ------------------------------------------------------------------
-    # Keyword constants tests
+    # Intake classification prompt test
     # ------------------------------------------------------------------
 
-    def test_order_keywords_constant(self):
-        """Test that ORDER_KEYWORDS contains expected menu items and verbs."""
-        assert "pizza" in ORDER_KEYWORDS
-        assert "burger" in ORDER_KEYWORDS
-        assert "coke" in ORDER_KEYWORDS
-        assert "order" in ORDER_KEYWORDS
-        assert "want" in ORDER_KEYWORDS
-
-    def test_confirm_keywords_constant(self):
-        """Test that CONFIRM_KEYWORDS contains expected confirmation words."""
-        assert "yes" in CONFIRM_KEYWORDS
-        assert "confirm" in CONFIRM_KEYWORDS
-        assert "sure" in CONFIRM_KEYWORDS
-
-    def test_cancel_keywords_constant(self):
-        """Test that CANCEL_KEYWORDS contains expected cancellation words."""
-        assert "no" in CANCEL_KEYWORDS
-        assert "cancel" in CANCEL_KEYWORDS
-        assert "nope" in CANCEL_KEYWORDS
+    def test_intake_classification_prompt_exists(self):
+        """Test that the intake classification prompt is defined and non-empty."""
+        assert INTAKE_CLASSIFICATION_PROMPT
+        assert "new_order" in INTAKE_CLASSIFICATION_PROMPT
+        assert "modification" in INTAKE_CLASSIFICATION_PROMPT
+        assert "confirmation" in INTAKE_CLASSIFICATION_PROMPT
+        assert "cancellation" in INTAKE_CLASSIFICATION_PROMPT
+        assert "greeting" in INTAKE_CLASSIFICATION_PROMPT
 
     # ------------------------------------------------------------------
     # Workflow and template tests
@@ -484,59 +471,136 @@ class TestMyAgentLangGraph:
     # Route after intake tests
     # ------------------------------------------------------------------
 
-    def test_route_after_intake_with_order_intent(self):
-        """Test routing to extraction_node when order intent is detected."""
-        state: OrderState = {"has_order_intent": True, "is_confirmation_reply": False}  # type: ignore[assignment]
+    def test_route_after_intake_new_order(self):
+        """Test routing to extraction_node when intent is new_order."""
+        state: OrderState = {  # type: ignore[assignment]
+            "intent": "new_order",
+            "has_order_intent": True,
+            "is_confirmation_reply": False,
+        }
         assert _route_after_intake(state) == "extraction_node"
 
-    def test_route_after_intake_without_order_intent(self):
-        """Test routing to final_response_node when no order intent."""
-        state: OrderState = {"has_order_intent": False, "is_confirmation_reply": False}  # type: ignore[assignment]
+    def test_route_after_intake_modification(self):
+        """Test routing to extraction_node when intent is modification."""
+        state: OrderState = {  # type: ignore[assignment]
+            "intent": "modification",
+            "has_order_intent": True,
+            "is_confirmation_reply": False,
+        }
+        assert _route_after_intake(state) == "extraction_node"
+
+    def test_route_after_intake_confirmation(self):
+        """Test routing to confirmation_node when intent is confirmation."""
+        state: OrderState = {  # type: ignore[assignment]
+            "intent": "confirmation",
+            "has_order_intent": False,
+            "is_confirmation_reply": True,
+        }
+        assert _route_after_intake(state) == "confirmation_node"
+
+    def test_route_after_intake_cancellation(self):
+        """Test routing to final_response_node when intent is cancellation."""
+        state: OrderState = {  # type: ignore[assignment]
+            "intent": "cancellation",
+            "has_order_intent": False,
+            "is_confirmation_reply": False,
+        }
         assert _route_after_intake(state) == "final_response_node"
 
-    def test_route_after_intake_missing_defaults_to_no_intent(self):
+    def test_route_after_intake_greeting(self):
+        """Test routing to final_response_node when intent is greeting."""
+        state: OrderState = {  # type: ignore[assignment]
+            "intent": "greeting",
+            "has_order_intent": False,
+            "is_confirmation_reply": False,
+        }
+        assert _route_after_intake(state) == "final_response_node"
+
+    def test_route_after_intake_missing_defaults_to_greeting(self):
         """Test routing defaults to final_response_node when fields are missing."""
         state: OrderState = {}  # type: ignore[assignment]
         assert _route_after_intake(state) == "final_response_node"
 
-    def test_route_after_intake_confirmation_reply(self):
-        """Test routing to confirmation_node when user is confirming."""
-        state: OrderState = {"has_order_intent": False, "is_confirmation_reply": True}  # type: ignore[assignment]
-        assert _route_after_intake(state) == "confirmation_node"
-
-    def test_route_after_intake_confirmation_takes_priority(self):
-        """Test that confirmation reply takes priority over order intent."""
-        state: OrderState = {"has_order_intent": True, "is_confirmation_reply": True}  # type: ignore[assignment]
-        assert _route_after_intake(state) == "confirmation_node"
-
     # ------------------------------------------------------------------
-    # Intake node tests
+    # Intake node tests (LLM-based)
     # ------------------------------------------------------------------
 
-    def test_intake_node_detects_order_intent(self, agent):
-        """Test that intake_node detects order intent from menu keywords."""
+    def test_intake_node_classifies_new_order(self, agent):
+        """Test that intake_node classifies food order as new_order."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "new_order"
+        mock_llm.invoke.return_value = mock_response
+
         state: OrderState = {  # type: ignore[assignment]
             "messages": [HumanMessage(content="I want 2 pizzas")],
             "completed_steps": [],
         }
-        result = agent._intake_node(state)
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._intake_node(state)
+
+        assert result["intent"] == "new_order"
         assert result["has_order_intent"] is True
         assert result["is_confirmation_reply"] is False
+        assert result["is_modification"] is False
         assert "intake" in result["completed_steps"]
 
-    def test_intake_node_detects_no_order_intent(self, agent):
-        """Test that intake_node detects no order intent from greetings."""
+    def test_intake_node_classifies_greeting(self, agent):
+        """Test that intake_node classifies greeting correctly."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "greeting"
+        mock_llm.invoke.return_value = mock_response
+
         state: OrderState = {  # type: ignore[assignment]
             "messages": [HumanMessage(content="Hello there!")],
             "completed_steps": [],
         }
-        result = agent._intake_node(state)
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._intake_node(state)
+
+        assert result["intent"] == "greeting"
         assert result["has_order_intent"] is False
         assert result["is_confirmation_reply"] is False
-        assert "intake" in result["completed_steps"]
 
-    def test_intake_node_detects_confirmation_reply(self, agent):
-        """Test that intake_node detects confirmation when AI asked for it."""
+    def test_intake_node_classifies_modification(self, agent):
+        """Test that intake_node classifies 'no, add 3 burgers' as modification."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "modification"
+        mock_llm.invoke.return_value = mock_response
+
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(
+                    content="🧾 Order summary:\n"
+                    "🍕 pizza — 2 x 10 dollars each = 20 dollars\n"
+                    "💳 Grand total: 20 dollars\n"
+                    "Would you like to confirm this order? Reply yes to confirm."
+                ),
+                HumanMessage(content="No, add 3 burgers please"),
+            ],
+            "completed_steps": [],
+        }
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._intake_node(state)
+
+        assert result["intent"] == "modification"
+        assert result["has_order_intent"] is True
+        assert result["is_modification"] is True
+        assert result["is_confirmation_reply"] is False
+        assert result["is_cancellation"] is False
+
+    def test_intake_node_classifies_confirmation(self, agent):
+        """Test that intake_node classifies 'yes' as confirmation when pending order."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "confirmation"
+        mock_llm.invoke.return_value = mock_response
+
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
                 AIMessage(content="Would you like to confirm this order? Reply yes to confirm."),
@@ -544,11 +608,20 @@ class TestMyAgentLangGraph:
             ],
             "completed_steps": [],
         }
-        result = agent._intake_node(state)
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._intake_node(state)
+
+        assert result["intent"] == "confirmation"
         assert result["is_confirmation_reply"] is True
 
-    def test_intake_node_detects_cancellation_reply(self, agent):
-        """Test that intake_node detects cancellation when AI asked for it."""
+    def test_intake_node_classifies_cancellation(self, agent):
+        """Test that intake_node classifies bare 'no' as cancellation when pending order."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "cancellation"
+        mock_llm.invoke.return_value = mock_response
+
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
                 AIMessage(content="Would you like to confirm this order? Reply yes to confirm."),
@@ -556,26 +629,86 @@ class TestMyAgentLangGraph:
             ],
             "completed_steps": [],
         }
-        result = agent._intake_node(state)
-        assert result["is_confirmation_reply"] is True
 
-    def test_intake_node_no_confirmation_without_prompt(self, agent):
-        """Test that 'yes' is not treated as confirmation without a prior prompt."""
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._intake_node(state)
+
+        assert result["intent"] == "cancellation"
+        assert result["is_cancellation"] is True
+        assert result["is_confirmation_reply"] is False
+        assert result["has_order_intent"] is False
+
+    def test_intake_node_confirmation_without_pending_order_becomes_greeting(self, agent):
+        """Test that 'yes' without a pending order is treated as greeting."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "confirmation"
+        mock_llm.invoke.return_value = mock_response
+
         state: OrderState = {  # type: ignore[assignment]
             "messages": [HumanMessage(content="yes")],
             "completed_steps": [],
         }
-        result = agent._intake_node(state)
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._intake_node(state)
+
+        # No pending order, so confirmation becomes greeting
+        assert result["intent"] == "greeting"
         assert result["is_confirmation_reply"] is False
 
-    def test_intake_node_case_insensitive(self, agent):
-        """Test that intake_node keyword matching is case-insensitive."""
+    def test_intake_node_cancellation_without_pending_order_becomes_greeting(self, agent):
+        """Test that 'cancel' without a pending order is treated as greeting."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "cancellation"
+        mock_llm.invoke.return_value = mock_response
+
         state: OrderState = {  # type: ignore[assignment]
-            "messages": [HumanMessage(content="I WANT A BURGER")],
+            "messages": [HumanMessage(content="cancel")],
             "completed_steps": [],
         }
-        result = agent._intake_node(state)
-        assert result["has_order_intent"] is True
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._intake_node(state)
+
+        assert result["intent"] == "greeting"
+        assert result["is_cancellation"] is False
+
+    def test_intake_node_handles_unexpected_llm_output(self, agent):
+        """Test that intake_node handles unexpected LLM output gracefully."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "I think this is a new_order request"
+        mock_llm.invoke.return_value = mock_response
+
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="I want pizza")],
+            "completed_steps": [],
+        }
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._intake_node(state)
+
+        # Should parse "new_order" from the response
+        assert result["intent"] == "new_order"
+
+    def test_intake_node_completely_unexpected_llm_output_defaults_to_greeting(self, agent):
+        """Test that completely unexpected LLM output defaults to greeting."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "banana smoothie"
+        mock_llm.invoke.return_value = mock_response
+
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="hello")],
+            "completed_steps": [],
+        }
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._intake_node(state)
+
+        assert result["intent"] == "greeting"
 
     # ------------------------------------------------------------------
     # Sub-agent factory tests
@@ -590,6 +723,21 @@ class TestMyAgentLangGraph:
                 type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
             ):
                 _ = agent._extraction_agent
+                mock_create_agent.assert_called_once()
+                _, kwargs = mock_create_agent.call_args
+                tool_names = {t.name for t in kwargs["tools"]}
+                assert "extract_order_items" in tool_names
+                assert kwargs["name"] == "extraction_agent"
+
+    @patch("agent.myagent.create_agent")
+    def test_modification_extraction_agent_created_with_correct_tool(self, mock_create_agent, agent):
+        """Test that _modification_extraction_agent is created with extract_order_items tool."""
+        mock_llm = Mock()
+        with patch.object(agent, "llm", return_value=mock_llm):
+            with patch.object(
+                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
+            ):
+                _ = agent._modification_extraction_agent
                 mock_create_agent.assert_called_once()
                 _, kwargs = mock_create_agent.call_args
                 tool_names = {t.name for t in kwargs["tools"]}
@@ -682,6 +830,7 @@ class TestMyAgentLangGraph:
             "messages": [HumanMessage(content="I want 2 pizzas")],
             "completed_steps": [],
             "extracted_items": "",
+            "is_modification": False,
         }
 
         with patch.object(
@@ -695,6 +844,46 @@ class TestMyAgentLangGraph:
         assert "extracted_items" in result
         data = json.loads(result["extracted_items"])
         assert "items" in data
+
+    def test_extraction_node_modification_uses_modification_agent(self, agent):
+        """Test that _extraction_node uses the modification agent for modifications."""
+        mock_agent = Mock()
+        mock_agent.invoke.return_value = {
+            "messages": [
+                ToolMessage(
+                    content='{"items": [{"item": "pizza", "quantity": 2}, {"item": "burger", "quantity": 3}]}',
+                    name="extract_order_items",
+                    tool_call_id="1",
+                ),
+                AIMessage(content="Updated order: 2 pizzas and 3 burgers."),
+            ]
+        }
+
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(
+                    content="🧾 Order summary:\n"
+                    "🍕 pizza — 2 x 10 dollars each = 20 dollars\n"
+                    "💳 Grand total: 20 dollars\n"
+                    "Would you like to confirm this order? Reply yes to confirm."
+                ),
+                HumanMessage(content="No, add 3 burgers please"),
+            ],
+            "completed_steps": [],
+            "extracted_items": "",
+            "is_modification": True,
+        }
+
+        with patch.object(
+            type(agent),
+            "_modification_extraction_agent",
+            new_callable=lambda: property(lambda self: mock_agent),
+        ):
+            result = agent._extraction_node(state)
+
+        assert "extraction" in result["completed_steps"]
+        data = json.loads(result["extracted_items"])
+        assert len(data["items"]) == 2
 
     def test_validation_node_stores_results_valid(self, agent):
         """Test that _validation_node correctly identifies a valid order."""
@@ -786,43 +975,14 @@ class TestMyAgentLangGraph:
         assert "pricing" in result["completed_steps"]
         assert "pricing_result" in result
 
-    def test_confirmation_node_user_confirms(self, agent):
-        """Test that _confirmation_node processes a 'yes' reply correctly."""
-        confirmation_json = json.dumps(
-            {"confirmed": True, "message": "Order confirmed!", "grand_total": 20}
-        )
-        mock_agent = Mock()
-        mock_agent.invoke.return_value = {
-            "messages": [
-                ToolMessage(content=confirmation_json, name="confirm_order", tool_call_id="1"),
-                AIMessage(content="Your order has been confirmed!"),
-            ]
-        }
-
+    def test_confirmation_node_confirms(self, agent):
+        """Test that _confirmation_node builds a confirmed result."""
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
-                AIMessage(content='Your total is 20 dollars. {"grand_total": 20, "line_items": []}'),
+                AIMessage(
+                    content="🧾 Order Summary:\n- pizza 2x = 20 dollars\nTotal: 59 dollars\nWould you like to confirm? Reply yes to confirm."
+                ),
                 HumanMessage(content="yes"),
-            ],
-            "completed_steps": ["intake"],
-        }
-
-        with patch.object(
-            type(agent),
-            "_confirmation_agent",
-            new_callable=lambda: property(lambda self: mock_agent),
-        ):
-            result = agent._confirmation_node(state)
-
-        assert "confirmation" in result["completed_steps"]
-        assert result["is_valid"] is True
-
-    def test_confirmation_node_user_cancels(self, agent):
-        """Test that _confirmation_node processes a 'no' reply correctly."""
-        state: OrderState = {  # type: ignore[assignment]
-            "messages": [
-                AIMessage(content="Would you like to confirm? Reply yes to confirm."),
-                HumanMessage(content="no"),
             ],
             "completed_steps": ["intake"],
         }
@@ -830,9 +990,10 @@ class TestMyAgentLangGraph:
         result = agent._confirmation_node(state)
 
         assert "confirmation" in result["completed_steps"]
-        assert result["is_valid"] is False
+        assert result["is_valid"] is True
         data = json.loads(result["confirmation_result"])
-        assert data["confirmed"] is False
+        assert data["confirmed"] is True
+        assert data["grand_total"] == 59
 
     # ------------------------------------------------------------------
     # Final response node tests
@@ -850,6 +1011,8 @@ class TestMyAgentLangGraph:
             "is_valid": True,
             "has_order_intent": True,
             "is_confirmation_reply": False,
+            "is_cancellation": False,
+            "intent": "new_order",
             "pricing_result": json.dumps({"grand_total": 20}),
             "completed_steps": ["extraction", "validation", "pricing"],
         }
@@ -874,6 +1037,8 @@ class TestMyAgentLangGraph:
             "is_valid": True,
             "has_order_intent": False,
             "is_confirmation_reply": True,
+            "is_cancellation": False,
+            "intent": "confirmation",
             "confirmation_result": json.dumps(
                 {"confirmed": True, "message": "Order confirmed!", "grand_total": 20}
             ),
@@ -897,11 +1062,10 @@ class TestMyAgentLangGraph:
             "messages": [HumanMessage(content="no")],
             "is_valid": False,
             "has_order_intent": False,
-            "is_confirmation_reply": True,
-            "confirmation_result": json.dumps(
-                {"confirmed": False, "message": "Order cancelled.", "grand_total": 0}
-            ),
-            "completed_steps": ["intake", "confirmation"],
+            "is_confirmation_reply": False,
+            "is_cancellation": True,
+            "intent": "cancellation",
+            "completed_steps": ["intake"],
         }
 
         with patch.object(agent, "llm", return_value=mock_llm):
@@ -922,6 +1086,8 @@ class TestMyAgentLangGraph:
             "is_valid": False,
             "has_order_intent": True,
             "is_confirmation_reply": False,
+            "is_cancellation": False,
+            "intent": "new_order",
             "validation_result": json.dumps(
                 {"is_valid": False, "errors": ["'sushi' is not on the menu."]}
             ),
@@ -948,6 +1114,8 @@ class TestMyAgentLangGraph:
             "is_valid": False,
             "has_order_intent": False,
             "is_confirmation_reply": False,
+            "is_cancellation": False,
+            "intent": "greeting",
             "completed_steps": ["intake"],
         }
 
@@ -1022,43 +1190,43 @@ class TestMyAgentLangGraph:
         output = _extract_tool_output(result, "extract_order_items")
         assert output == ""
 
-    def test_is_awaiting_confirmation_true(self):
-        """Test _is_awaiting_confirmation returns True when AI asked for order confirmation."""
+    def test_has_pending_order_true(self):
+        """Test _has_pending_order returns True when AI asked for order confirmation."""
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
                 AIMessage(content="Would you like to confirm this order? Reply yes to confirm."),
                 HumanMessage(content="yes"),
             ]
         }
-        assert _is_awaiting_confirmation(state) is True
+        assert _has_pending_order(state) is True
 
-    def test_is_awaiting_confirmation_false(self):
-        """Test _is_awaiting_confirmation returns False when AI didn't ask."""
+    def test_has_pending_order_false(self):
+        """Test _has_pending_order returns False when AI didn't ask."""
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
                 AIMessage(content="Hello! How can I help you?"),
                 HumanMessage(content="yes"),
             ]
         }
-        assert _is_awaiting_confirmation(state) is False
+        assert _has_pending_order(state) is False
 
-    def test_is_awaiting_confirmation_false_for_menu_question(self):
-        """Test _is_awaiting_confirmation returns False for 'would you like to order?' messages."""
+    def test_has_pending_order_false_for_menu_question(self):
+        """Test _has_pending_order returns False for 'would you like to order?' messages."""
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
                 AIMessage(content="Sure — I can help! Our menu: Pizza: 10 dollars. What would you like to order?"),
                 HumanMessage(content="I want 2 pizzas with 15 cokes"),
             ]
         }
-        assert _is_awaiting_confirmation(state) is False
+        assert _has_pending_order(state) is False
 
-    def test_is_awaiting_confirmation_empty(self):
-        """Test _is_awaiting_confirmation returns False with no messages."""
+    def test_has_pending_order_empty(self):
+        """Test _has_pending_order returns False with no messages."""
         state: OrderState = {"messages": []}  # type: ignore[assignment]
-        assert _is_awaiting_confirmation(state) is False
+        assert _has_pending_order(state) is False
 
-    def test_is_awaiting_confirmation_skips_system_messages(self):
-        """Test _is_awaiting_confirmation skips SystemMessages between AI and Human."""
+    def test_has_pending_order_skips_system_messages(self):
+        """Test _has_pending_order skips SystemMessages between AI and Human."""
         from langchain_core.messages import SystemMessage
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
@@ -1067,40 +1235,16 @@ class TestMyAgentLangGraph:
                 HumanMessage(content="yes"),
             ]
         }
-        assert _is_awaiting_confirmation(state) is True
+        assert _has_pending_order(state) is True
 
-    def test_is_awaiting_confirmation_only_human_message(self):
-        """Test _is_awaiting_confirmation returns False with only a HumanMessage."""
+    def test_has_pending_order_only_human_message(self):
+        """Test _has_pending_order returns False with only a HumanMessage."""
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
                 HumanMessage(content="yes"),
             ]
         }
-        assert _is_awaiting_confirmation(state) is False
-
-    def test_extract_pricing_from_history_found(self):
-        """Test _extract_pricing_from_history finds pricing JSON in AI message."""
-        state: OrderState = {  # type: ignore[assignment]
-            "messages": [
-                AIMessage(
-                    content='Here is your order: {"grand_total": 20, "line_items": [{"item": "pizza", "quantity": 2}]}'
-                ),
-            ]
-        }
-        result = _extract_pricing_from_history(state)
-        assert result != ""
-        data = json.loads(result)
-        assert data["grand_total"] == 20
-
-    def test_extract_pricing_from_history_not_found(self):
-        """Test _extract_pricing_from_history returns empty when no pricing data."""
-        state: OrderState = {  # type: ignore[assignment]
-            "messages": [
-                AIMessage(content="Hello! How can I help you?"),
-            ]
-        }
-        result = _extract_pricing_from_history(state)
-        assert result == ""
+        assert _has_pending_order(state) is False
 
     def test_extract_total_from_history_found(self):
         """Test _extract_total_from_history finds total from human-readable text."""
@@ -1148,30 +1292,30 @@ class TestMyAgentLangGraph:
         """Test _extract_order_summary_from_history returns empty when no summary."""
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
-                AIMessage(content ="Hello! How can I help you?"),
+                AIMessage(content="Hello! How can I help you?"),
             ]
         }
         assert _extract_order_summary_from_history(state) == ""
 
-    def test_confirmation_node_extracts_total_from_text(self, agent):
-        """Test that confirmation_node extracts grand_total from human-readable AI text."""
+    def test_extract_previous_order_from_history_found(self):
+        """Test _extract_previous_order_from_history finds previous order details."""
+        order_msg = "🧾 Order summary:\n🍕 pizza — 2 x 10 dollars each = 20 dollars\n💳 Grand total: 20 dollars"
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
-                AIMessage(
-                    content="🧾 Order Summary:\n- pizza 2x = 20 dollars\nTotal: 59 dollars\nWould you like to confirm? Reply yes to confirm."
-                ),
-                HumanMessage(content="yes"),
-            ],
-            "completed_steps": ["intake"],
+                AIMessage(content=order_msg),
+                HumanMessage(content="add 3 burgers"),
+            ]
         }
+        assert _extract_previous_order_from_history(state) == order_msg
 
-        result = agent._confirmation_node(state)
-
-        assert "confirmation" in result["completed_steps"]
-        assert result["is_valid"] is True
-        data = json.loads(result["confirmation_result"])
-        assert data["confirmed"] is True
-        assert data["grand_total"] == 59
+    def test_extract_previous_order_from_history_not_found(self):
+        """Test _extract_previous_order_from_history returns fallback when no order."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Hello! How can I help?"),
+            ]
+        }
+        assert _extract_previous_order_from_history(state) == "No previous order found."
 
     # ------------------------------------------------------------------
     # Direct tool tests
