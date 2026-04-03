@@ -320,7 +320,12 @@ export function buildConversationMessages(
     .filter((m): m is Message => m !== null);
 
   const knownIds = new Set(fromHistory.map(m => m.id));
-  const uniqueSessionMessages = fromSession.filter(m => !knownIds.has(m.id));
+  // Only include user messages from session events that aren't already in history.
+  // Assistant/tool messages are persisted by the backend storage layer during the
+  // agent run, so sending them again would trigger "cannot create new non-user messages".
+  const uniqueSessionMessages = fromSession.filter(
+    m => !knownIds.has(m.id) && m.role === 'user'
+  );
 
   return [
     ...fromHistory,

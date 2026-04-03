@@ -11,18 +11,32 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Multi-agent data-processing workflow.
+"""Smart Order Assistant — multi-agent food ordering workflow.
 
-Supervisor-based LangGraph workflow with:
-  - intake_node         : classifies the user request into task categories
-  - supervisor_node     : rule-based routing hub deciding which specialist runs next
-  - analysis_node       : data analysis via pandas (analyze_data tool)
-  - visualization_node  : chart generation (generate_chart tool)
-  - calculation_node    : math evaluation (calculate tool)
-  - pii_node            : PII detection & redaction (remove_pii tool)
-  - presenter_node      : synthesises all results into a polished response
+A beginner-friendly LangGraph workflow with 6 nodes that process a food order:
+
+  0. intake_node         : Quick check — is this a food order, a confirmation, or a greeting?
+  1. extraction_node     : Extracts items and quantities from the user's message.
+  2. validation_node     : Checks items exist on the menu and quantity <= 10.
+  3. pricing_node        : Calculates the total price (only if validation passes).
+  4. confirmation_node   : Human-in-the-loop — processes user's yes/no confirmation.
+  5. final_response_node : Returns a friendly confirmation or error message.
+
+Conditional routing:
+  - If intake detects NO order intent and NO confirmation → final_response_node (greeting)
+  - If intake detects a confirmation reply → confirmation_node
+  - If validation fails → skip pricing & confirmation → final_response_node
+  - After pricing → final_response_node asks user to confirm (multi-turn)
+  - On next turn, user says "yes"/"no" → confirmation_node → final_response_node
+
+Example menu:
+  - pizza  = $10
+  - burger = $8
+  - coke   = $3
 """
 
+import json
+import re
 from typing import Any, Literal, Optional, Union
 
 from ag_ui.core import RunAgentInput
@@ -37,115 +51,133 @@ from langchain_core.tools import BaseTool
 from langchain_litellm.chat_models import ChatLiteLLM
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import Command
-from pydantic import BaseModel, Field
 
 from agent.config import Config
-from agent.tools import analyze_data, calculate, generate_chart, remove_pii
+from agent.tools import (
+    calculate_order_price,
+    confirm_order,
+    extract_order_items,
+    format_order_response,
+    validate_order,
+)
+
+# ---------------------------------------------------------------------------
+# Restaurant menu — used by tools and prompts
+# ---------------------------------------------------------------------------
+MENU = {"pizza": 10, "burger": 8, "coke": 3}
 
 # ---------------------------------------------------------------------------
 # Shared typed state
 # ---------------------------------------------------------------------------
 
 
-class DataProcessingState(MessagesState):
-    """Shared state passed between all nodes in the data-processing workflow."""
+class OrderState(MessagesState):
+    """Shared state passed between all nodes in the order workflow.
 
-    # Task classification flags
-    needs_analysis: bool
-    needs_visualization: bool
-    needs_calculation: bool
-    needs_pii_removal: bool
+    Think of this as a "clipboard" that every agent can read from and write to.
+    Each field stores the output of one step so the next step can use it.
+    """
 
-    # Sub-agent result buckets
-    analysis_results: dict[str, Any]
-    visualization_results: dict[str, Any]
-    calculation_results: dict[str, Any]
-    pii_results: dict[str, Any]
+    # Output of the extraction agent (JSON string of items + quantities)
+    extracted_items: str
 
-    # Workflow control
-    next_agent: str  # "analysis" | "visualization" | "calculation" | "pii" | "FINISH"
+    # Output of the validation agent (JSON string with is_valid + errors)
+    validation_result: str
+
+    # Whether the order passed validation (used for conditional routing)
+    is_valid: bool
+
+    # Output of the pricing agent (JSON string with line items + total)
+    pricing_result: str
+
+    # Output of the confirmation agent (JSON string with confirmed + message)
+    confirmation_result: str
+
+    # Tracks which steps have been completed
     completed_steps: list[str]
 
+    # Whether the intake node detected an order intent in the user's message
+    has_order_intent: bool
 
-# ---------------------------------------------------------------------------
-# Pydantic model for structured intake extraction
-# ---------------------------------------------------------------------------
-
-
-class TaskClassification(BaseModel):
-    """Structured classification of the user's data-processing request."""
-
-    needs_analysis: bool = Field(
-        description=(
-            "True if the user wants to explore, summarise, filter, group, or "
-            "statistically analyse tabular/JSON data."
-        ),
-    )
-    needs_visualization: bool = Field(
-        description=(
-            "True if the user wants a chart, graph, plot, or any visual "
-            "representation of data."
-        ),
-    )
-    needs_calculation: bool = Field(
-        description=(
-            "True if the user wants to evaluate a mathematical expression, "
-            "perform arithmetic, trigonometry, statistics, or linear algebra."
-        ),
-    )
-    needs_pii_removal: bool = Field(
-        description=(
-            "True if the user wants to detect, redact, or remove personally "
-            "identifiable information (emails, phones, SSNs, etc.) from text."
-        ),
-    )
+    # Whether the user is replying to a confirmation prompt (yes/no)
+    is_confirmation_reply: bool
 
 
 # ---------------------------------------------------------------------------
-# Conditional edge routing functions
+# Conditional routing functions
 # ---------------------------------------------------------------------------
 
 
-def _route_supervisor(
-    state: DataProcessingState,
-) -> Literal[
-    "analysis_node",
-    "visualization_node",
-    "calculation_node",
-    "pii_node",
-    "presenter_node",
-]:
-    next_agent = state.get("next_agent", "FINISH")
-    mapping: dict[
-        str,
-        Literal[
-            "analysis_node",
-            "visualization_node",
-            "calculation_node",
-            "pii_node",
-            "presenter_node",
-        ],
-    ] = {
-        "analysis": "analysis_node",
-        "visualization": "visualization_node",
-        "calculation": "calculation_node",
-        "pii": "pii_node",
-        "FINISH": "presenter_node",
-    }
-    return mapping.get(next_agent, "presenter_node")
+# Keywords that suggest the user is trying to place a food order
+ORDER_KEYWORDS = [
+    # Menu item names (and common plurals)
+    "pizza",
+    "pizzas",
+    "burger",
+    "burgers",
+    "coke",
+    "cokes",
+    # Order-related verbs / phrases
+    "order",
+    "want",
+    "give me",
+    "i'd like",
+    "i would like",
+    "can i get",
+    "can i have",
+    "get me",
+    "bring me",
+    "add",
+    "buy",
+    "purchase",
+]
+
+# Keywords that indicate the user is confirming or cancelling an order
+CONFIRM_KEYWORDS = ["yes", "yeah", "yep", "sure", "confirm", "ok", "okay", "go ahead"]
+CANCEL_KEYWORDS = ["no", "nah", "nope", "cancel", "nevermind", "never mind", "stop"]
+
+
+def _route_after_intake(
+    state: OrderState,
+) -> Literal["extraction_node", "confirmation_node", "final_response_node"]:
+    """Decide where to go after the intake check.
+
+    If the user is confirming/cancelling → confirmation_node
+    If the message looks like a food order → extraction_node
+    If it's just a greeting / question    → final_response_node
+    """
+    if state.get("is_confirmation_reply", False):
+        return "confirmation_node"
+    if state.get("has_order_intent", False):
+        return "extraction_node"
+    return "final_response_node"
+
+
+def _route_after_validation(
+    state: OrderState,
+) -> Literal["pricing_node", "final_response_node"]:
+    """Decide where to go after validation.
+
+    If the order is valid   → continue to pricing_node
+    If the order is invalid → skip pricing & confirmation, go to final_response_node
+    """
+    if state.get("is_valid", False):
+        return "pricing_node"
+    else:
+        return "final_response_node"
 
 
 # ---------------------------------------------------------------------------
-# MyAgent
+# MyAgent — Smart Order Assistant
 # ---------------------------------------------------------------------------
 
 
 class MyAgent(LangGraphAgent):
-    """Multi-agent data-processing assistant.
+    """Smart Order Assistant with 5 sub-agents.
 
-    Orchestrates four specialist sub-agents (Analysis, Visualization,
-    Calculation, PII) via a Supervisor node that uses deterministic
-    conditional edges.
+    Processes food orders through extraction → validation → pricing →
+    (ask for confirmation) → confirmation → final response, with conditional
+    routing that skips pricing/confirmation when validation fails.
     """
 
     def __init__(
@@ -188,17 +220,18 @@ class MyAgent(LangGraphAgent):
             self.model = self.default_model
 
     # ------------------------------------------------------------------
-    # Tools
+    # Tools — all 5 order-processing tools
     # ------------------------------------------------------------------
 
     @property
     def tools(self) -> list[BaseTool]:
         """Return the list of all tools available to the agent."""
         return [
-            remove_pii,
-            generate_chart,
-            analyze_data,
-            calculate,
+            extract_order_items,
+            validate_order,
+            calculate_order_price,
+            confirm_order,
+            format_order_response,
         ]
 
     # ------------------------------------------------------------------
@@ -256,9 +289,10 @@ class MyAgent(LangGraphAgent):
             [
                 (
                     "system",
-                    "You are a helpful data-processing assistant with access to "
-                    "specialized tools for data analysis, chart generation, math "
-                    "calculations, and PII removal.",
+                    "You are a Smart Order Assistant for a restaurant. "
+                    "You help customers place food orders. "
+                    "Our menu: pizza (10 dollars), burger (8 dollars), coke (3 dollars). "
+                    "Maximum 10 of any item per order.",
                 ),
                 ("user", "{user_prompt_content}"),
             ]
@@ -272,15 +306,13 @@ class MyAgent(LangGraphAgent):
         """Convert the full AG-UI message history into LangGraph state messages.
 
         Converts every prior turn in run_agent_input.messages into the
-        appropriate HumanMessage / AIMessage so that _intake_node sees the
-        complete conversation history, not just the latest user turn.
+        appropriate HumanMessage / AIMessage so that the extraction node
+        sees the complete conversation history.
         """
         history_messages: list[Any] = []
         all_messages = list(run_agent_input.messages or [])
 
         # Prior messages become raw history entries.
-        # The last user message is formatted through the prompt template so
-        # the system prompt is included.
         prior_messages = all_messages[:-1] if len(all_messages) > 1 else []
 
         for msg in prior_messages:
@@ -300,508 +332,604 @@ class MyAgent(LangGraphAgent):
         return Command(update={"messages": history_messages + current_messages})
 
     # ------------------------------------------------------------------
-    # Node: intake_node
-    # Classifies the user request into task categories.
-    # ------------------------------------------------------------------
-
-    def _intake_node(self, state: DataProcessingState) -> dict[str, Any]:
-        """Classify the user's request to determine which specialist agents are needed."""
-        # Use keyword-based classification to avoid LLM streaming in this node.
-        # LLM calls in non-terminal nodes create orphaned TEXT_MESSAGE_START events
-        # that the AG-UI protocol cannot close before RUN_FINISHED.
-        user_message = _extract_latest_user_message(state).lower()
-
-        needs_analysis = any(
-            kw in user_message
-            for kw in [
-                "analyze",
-                "analyse",
-                "data",
-                "csv",
-                "json",
-                "dataframe",
-                "describe",
-                "filter",
-                "groupby",
-                "group by",
-                "statistics",
-                "head",
-                "tail",
-                "correlation",
-                "sort",
-                "column",
-                "row",
-                "value_counts",
-                "nunique",
-                "sample",
-                "shape",
-                "info",
-                "mean",
-                "median",
-                "sum of",
-                "min of",
-                "max of",
-            ]
-        )
-        needs_visualization = any(
-            kw in user_message
-            for kw in [
-                "chart",
-                "graph",
-                "plot",
-                "visualize",
-                "visualise",
-                "bar chart",
-                "line chart",
-                "pie chart",
-                "scatter",
-                "histogram",
-                "draw",
-            ]
-        )
-        needs_calculation = any(
-            kw in user_message
-            for kw in [
-                "calculate",
-                "compute",
-                "math",
-                "equation",
-                "formula",
-                "sqrt",
-                "sin",
-                "cos",
-                "tan",
-                "log",
-                "log2",
-                "log10",
-                "multiply",
-                "divide",
-                "add",
-                "subtract",
-                "factorial",
-                "np_mean",
-                "np_median",
-                "np_std",
-                "np_dot",
-            ]
-        )
-        needs_pii = any(
-            kw in user_message
-            for kw in [
-                "pii",
-                "redact",
-                "remove pii",
-                "personal information",
-                "ssn",
-                "social security",
-                "credit card",
-                "anonymize",
-                "anonymise",
-                "phone number",
-                "email address",
-            ]
-        )
-
-        classification = TaskClassification(
-            needs_analysis=needs_analysis,
-            needs_visualization=needs_visualization,
-            needs_calculation=needs_calculation,
-            needs_pii_removal=needs_pii,
-        )
-
-        if self.verbose:
-            print(f"[intake_node] classification: {classification.model_dump()}")
-
-        return {
-            "needs_analysis": classification.needs_analysis,
-            "needs_visualization": classification.needs_visualization,
-            "needs_calculation": classification.needs_calculation,
-            "needs_pii_removal": classification.needs_pii_removal,
-            "analysis_results": state.get("analysis_results", {}),
-            "visualization_results": state.get("visualization_results", {}),
-            "calculation_results": state.get("calculation_results", {}),
-            "pii_results": state.get("pii_results", {}),
-            "completed_steps": state.get("completed_steps", []),
-            "next_agent": state.get("next_agent", ""),
-        }
-
-    # ------------------------------------------------------------------
-    # Node: supervisor_node
-    # Deterministic routing based on classification flags and completed steps.
-    # ------------------------------------------------------------------
-
-    def _supervisor_node(self, state: DataProcessingState) -> dict[str, Any]:
-        """Route to the next specialist agent based on what's needed and what's done."""
-        completed = state.get("completed_steps", [])
-
-        needs_analysis = state.get("needs_analysis", False)
-        needs_visualization = state.get("needs_visualization", False)
-        needs_calculation = state.get("needs_calculation", False)
-        needs_pii = state.get("needs_pii_removal", False)
-
-        # Deterministic priority order: analysis → visualization → calculation → pii
-        if needs_analysis and "analysis" not in completed:
-            next_agent = "analysis"
-            reasoning = "Data analysis is needed and has not been completed yet."
-        elif needs_visualization and "visualization" not in completed:
-            next_agent = "visualization"
-            reasoning = "Visualization is needed and has not been completed yet."
-        elif needs_calculation and "calculation" not in completed:
-            next_agent = "calculation"
-            reasoning = "Math calculation is needed and has not been completed yet."
-        elif needs_pii and "pii" not in completed:
-            next_agent = "pii"
-            reasoning = "PII removal is needed and has not been completed yet."
-        else:
-            next_agent = "FINISH"
-            reasoning = "All required tasks have been completed."
-
-        if self.verbose:
-            print(f"[supervisor] → {next_agent}: {reasoning}")
-
-        return {
-            "next_agent": next_agent,
-            "completed_steps": completed,
-        }
-
-    # ------------------------------------------------------------------
-    # Specialist sub-agent factories
+    # Sub-agent factories (each agent gets its own tool + system prompt)
     # ------------------------------------------------------------------
 
     @property
-    def _analysis_agent(self) -> Any:
-        return create_agent(
-            self.llm(),
-            tools=[analyze_data] + self.mcp_tools + self._workflow_tools,
-            system_prompt=make_system_prompt(
-                "You are the Data Analysis Agent. Your job is to explore and "
-                "analyse data using the analyze_data tool.\n\n"
-                "Capabilities:\n"
-                "- Load JSON data into a pandas DataFrame\n"
-                "- Perform operations: describe, head, tail, info, shape, columns, "
-                "dtypes, value_counts, correlation, sort, filter, groupby, mean, "
-                "median, sum, min, max, nunique, sample\n\n"
-                "Always call the analyze_data tool with the appropriate operation. "
-                "Return a clear summary of your findings."
-            ),
-            name="analysis_agent",
-        )
+    def _extraction_agent(self) -> Any:
+        """Create the Extraction Agent.
 
-    @property
-    def _visualization_agent(self) -> Any:
-        return create_agent(
-            self.llm(),
-            tools=[generate_chart] + self.mcp_tools + self._workflow_tools,
-            system_prompt=make_system_prompt(
-                "You are the Visualization Agent. Your job is to create charts "
-                "and graphs from data using the generate_chart tool.\n\n"
-                "Supported chart types: bar, line, pie, scatter, histogram.\n\n"
-                "Data format:\n"
-                '- For bar/line/scatter: {"x": [...], "y": [...]}\n'
-                '- For pie: {"labels": [...], "values": [...]}\n'
-                '- For histogram: {"values": [...]}\n\n'
-                "Always call the generate_chart tool. Include a title and axis "
-                "labels when appropriate. Return the chart image."
-            ),
-            name="visualization_agent",
-        )
-
-    @property
-    def _calculation_agent(self) -> Any:
-        return create_agent(
-            self.llm(),
-            tools=[calculate] + self.mcp_tools + self._workflow_tools,
-            system_prompt=make_system_prompt(
-                "You are the Math Calculation Agent. Your job is to evaluate "
-                "mathematical expressions using the calculate tool.\n\n"
-                "Capabilities:\n"
-                "- Arithmetic: +, -, *, /, **, %\n"
-                "- Trigonometry: sin, cos, tan, asin, acos, atan\n"
-                "- Logarithms: log, log2, log10\n"
-                "- Constants: pi, e, inf\n"
-                "- Statistics (numpy): np_mean, np_median, np_std, np_var\n"
-                "- Linear algebra: np_dot, np_cross, np_linalg_norm, "
-                "np_linalg_det, np_linalg_inv\n\n"
-                "Always call the calculate tool. Explain the result clearly."
-            ),
-            name="calculation_agent",
-        )
-
-    @property
-    def _pii_agent(self) -> Any:
-        return create_agent(
-            self.llm(),
-            tools=[remove_pii] + self.mcp_tools + self._workflow_tools,
-            system_prompt=make_system_prompt(
-                "You are the PII Removal Agent. Your job is to detect and redact "
-                "personally identifiable information using the remove_pii tool.\n\n"
-                "Detectable PII types:\n"
-                "- Email addresses\n"
-                "- Phone numbers\n"
-                "- Social Security Numbers (SSNs)\n"
-                "- Credit card numbers\n"
-                "- IP addresses\n"
-                "- Dates of birth\n\n"
-                "Always call the remove_pii tool with the text to scan. "
-                "Return the redacted text and a summary of what was found."
-            ),
-            name="pii_agent",
-        )
-
-    # ------------------------------------------------------------------
-    # Sub-agent node wrappers
-    # ------------------------------------------------------------------
-
-    def _analysis_node(self, state: DataProcessingState) -> dict[str, Any]:
-        """Run the analysis sub-agent and persist results into shared state."""
-        user_request = _extract_latest_user_message(state)
-        prior_results = _gather_prior_results(state)
-
-        context_msg = HumanMessage(
-            content=(
-                f"The user asked:\n{user_request}\n\n"
-                f"{prior_results}"
-                "Please analyse the data as requested using the analyze_data tool."
-            )
-        )
-        result = self._analysis_agent.invoke({"messages": [context_msg]})
-        last_ai = _last_ai_content(result)
-
-        completed = list(state.get("completed_steps", []))
-        if "analysis" not in completed:
-            completed.append("analysis")
-
-        return {
-            "analysis_results": {"summary": last_ai},
-            "completed_steps": completed,
-        }
-
-    def _visualization_node(self, state: DataProcessingState) -> dict[str, Any]:
-        """Run the visualization sub-agent and persist results into shared state."""
-        user_request = _extract_latest_user_message(state)
-        prior_results = _gather_prior_results(state)
-
-        context_msg = HumanMessage(
-            content=(
-                f"The user asked:\n{user_request}\n\n"
-                f"{prior_results}"
-                "Please create the requested chart using the generate_chart tool."
-            )
-        )
-        result = self._visualization_agent.invoke({"messages": [context_msg]})
-        last_ai = _last_ai_content(result)
-
-        completed = list(state.get("completed_steps", []))
-        if "visualization" not in completed:
-            completed.append("visualization")
-
-        return {
-            "visualization_results": {"summary": last_ai},
-            "completed_steps": completed,
-        }
-
-    def _calculation_node(self, state: DataProcessingState) -> dict[str, Any]:
-        """Run the calculation sub-agent and persist results into shared state."""
-        user_request = _extract_latest_user_message(state)
-        prior_results = _gather_prior_results(state)
-
-        context_msg = HumanMessage(
-            content=(
-                f"The user asked:\n{user_request}\n\n"
-                f"{prior_results}"
-                "Please evaluate the mathematical expression using the calculate tool."
-            )
-        )
-        result = self._calculation_agent.invoke({"messages": [context_msg]})
-        last_ai = _last_ai_content(result)
-
-        completed = list(state.get("completed_steps", []))
-        if "calculation" not in completed:
-            completed.append("calculation")
-
-        return {
-            "calculation_results": {"summary": last_ai},
-            "completed_steps": completed,
-        }
-
-    def _pii_node(self, state: DataProcessingState) -> dict[str, Any]:
-        """Run the PII removal sub-agent and persist results into shared state."""
-        user_request = _extract_latest_user_message(state)
-
-        context_msg = HumanMessage(
-            content=(
-                f"The user asked:\n{user_request}\n\n"
-                "Please scan the text for PII and redact it using the remove_pii tool."
-            )
-        )
-        result = self._pii_agent.invoke({"messages": [context_msg]})
-        last_ai = _last_ai_content(result)
-
-        completed = list(state.get("completed_steps", []))
-        if "pii" not in completed:
-            completed.append("pii")
-
-        return {
-            "pii_results": {"summary": last_ai},
-            "completed_steps": completed,
-        }
-
-    # ------------------------------------------------------------------
-    # Node: presenter_node
-    # Synthesises all sub-agent results into a single user-facing response.
-    # ------------------------------------------------------------------
-
-    def _presenter_node(self, state: DataProcessingState) -> dict[str, Any]:
-        """Combine all specialist results into a polished, user-facing response.
-
-        When no specialists were needed (e.g. a simple greeting), responds
-        conversationally to the user's message instead of trying to synthesise
-        empty results.
+        This agent's job is to read the user's message and pull out
+        which menu items they want and how many of each.
         """
-        analysis = state.get("analysis_results", {}).get("summary", "")
-        visualization = state.get("visualization_results", {}).get("summary", "")
-        calculation = state.get("calculation_results", {}).get("summary", "")
-        pii = state.get("pii_results", {}).get("summary", "")
+        return create_agent(
+            self.llm(),
+            tools=[extract_order_items] + self.mcp_tools + self._workflow_tools,
+            system_prompt=make_system_prompt(
+                "You are the Extraction Agent for a restaurant order system.\n\n"
+                "Your ONLY job is to extract food items and quantities from the "
+                "user's message using the extract_order_items tool.\n\n"
+                f"Our menu: {MENU}\n\n"
+                "IMPORTANT: Always call the extract_order_items tool first.\n"
+                "After the tool returns, summarize what you found in a brief, "
+                "friendly sentence like: 'I found 2 pizzas and 3 cokes in your order.'\n"
+                "Do NOT output raw JSON to the user. Always write a human-friendly summary."
+            ),
+            name="extraction_agent",
+        )
 
-        sections: list[str] = []
-        if analysis:
-            sections.append(f"Data Analysis Results:\n{analysis}")
-        if visualization:
-            sections.append(f"Visualization Results:\n{visualization}")
-        if calculation:
-            sections.append(f"Calculation Results:\n{calculation}")
-        if pii:
-            sections.append(f"PII Removal Results:\n{pii}")
+    @property
+    def _validation_agent(self) -> Any:
+        """Create the Validation Agent.
 
-        # If no specialists produced results, respond conversationally
-        if not sections:
-            user_message = _extract_latest_user_message(state)
-            conversational_prompt = (
-                "You are a friendly, helpful data-processing assistant. "
-                "The user sent a conversational message that does not require "
-                "any data analysis, charting, math, or PII removal.\n\n"
-                "Respond naturally and warmly. Briefly mention what you can help "
-                "with (data analysis, chart generation, math calculations, and "
-                "PII removal) so the user knows your capabilities.\n\n"
-                "Keep your response short and friendly — 2-3 sentences max.\n\n"
-                f"User message: {user_message}"
+        This agent checks that every item exists on the menu and that
+        no quantity exceeds 10 (our guardrail).
+        """
+        return create_agent(
+            self.llm(),
+            tools=[validate_order] + self.mcp_tools + self._workflow_tools,
+            system_prompt=make_system_prompt(
+                "You are the Validation Agent for a restaurant order system.\n\n"
+                "Your ONLY job is to validate extracted order items using the "
+                "validate_order tool.\n\n"
+                "Guardrails:\n"
+                f"- Items must be on the menu: {list(MENU.keys())}\n"
+                "- Quantity per item must be between 1 and 10\n\n"
+                "IMPORTANT: Always call the validate_order tool first.\n"
+                "After the tool returns, summarize the result in a brief, "
+                "friendly sentence like: 'All items are valid and on the menu!' "
+                "or 'Sorry, sushi is not on our menu.'\n"
+                "Do NOT output raw JSON to the user."
+            ),
+            name="validation_agent",
+        )
+
+    @property
+    def _pricing_agent(self) -> Any:
+        """Create the Pricing Agent.
+
+        This agent calculates the price for each line item and the
+        grand total using menu prices.
+        """
+        return create_agent(
+            self.llm(),
+            tools=[calculate_order_price] + self.mcp_tools + self._workflow_tools,
+            system_prompt=make_system_prompt(
+                "You are the Pricing Agent for a restaurant order system.\n\n"
+                "Your ONLY job is to calculate the total price using the "
+                "calculate_order_price tool.\n\n"
+                f"Menu prices: {MENU}\n\n"
+                "IMPORTANT: Always call the calculate_order_price tool first.\n"
+                "After the tool returns, present the pricing as a clear summary like:\n"
+                "  2x pizza at 10 dollars each = 20 dollars\n"
+                "  3x coke at 3 dollars each = 9 dollars\n"
+                "  Total: 29 dollars\n\n"
+                "Do NOT output raw JSON. Write prices as 'X dollars' not with dollar signs."
+            ),
+            name="pricing_agent",
+        )
+
+    @property
+    def _confirmation_agent(self) -> Any:
+        """Create the Confirmation Agent.
+
+        This agent processes the user's yes/no reply to confirm or cancel.
+        """
+        return create_agent(
+            self.llm(),
+            tools=[confirm_order] + self.mcp_tools + self._workflow_tools,
+            system_prompt=make_system_prompt(
+                "You are the Confirmation Agent for a restaurant order system.\n\n"
+                "Your ONLY job is to confirm or cancel the order using the "
+                "confirm_order tool.\n\n"
+                "You will receive the pricing data. Call the confirm_order tool "
+                "with it to finalize the order.\n"
+                "After the tool returns, say something like: "
+                "'Your order has been confirmed!' or 'Order cancelled.'\n"
+                "Do NOT output raw JSON."
+            ),
+            name="confirmation_agent",
+        )
+
+    @property
+    def _final_response_agent(self) -> Any:
+        """Create the Final Response Agent.
+
+        This agent formats the final message shown to the user — either
+        a confirmation or an error message.
+        """
+        return create_agent(
+            self.llm(),
+            tools=[format_order_response] + self.mcp_tools + self._workflow_tools,
+            system_prompt=make_system_prompt(
+                "You are the Final Response Agent for a restaurant order system.\n\n"
+                "Your ONLY job is to format the final response using the "
+                "format_order_response tool.\n\n"
+                "For valid orders: pass the confirmation data.\n"
+                "For invalid orders: pass the validation errors.\n\n"
+                "Always call the format_order_response tool. "
+                "Return a friendly, clear message for the customer.\n"
+                "Do NOT output raw JSON."
+            ),
+            name="final_response_agent",
+        )
+
+    # ------------------------------------------------------------------
+    # Node wrappers — each node runs its sub-agent and stores results
+    #
+    # Intermediate nodes use create_agent so tool calls are visible in
+    # the UI via AG-UI ToolCallEndEvent. Sub-agent prompts instruct the
+    # LLM to produce human-friendly summaries (not raw JSON).
+    # ------------------------------------------------------------------
+
+    def _intake_node(self, state: OrderState) -> dict[str, Any]:
+        """Step 0: Quick keyword check — is this a food order, confirmation, or greeting?
+
+        This is a lightweight, deterministic check (no LLM call) that scans
+        the user's message for order-related keywords or confirmation keywords.
+
+        Routes to:
+          - confirmation_node: if user is replying yes/no to a pending order
+          - extraction_node: if user is placing a new order
+          - final_response_node: if it's just a greeting or question
+        """
+        user_message = _extract_latest_user_message(state)
+        user_lower = user_message.lower().strip()
+
+        # Check if the previous assistant message was asking for confirmation
+        is_awaiting_confirmation = _is_awaiting_confirmation(state)
+
+        # Check if this is a confirmation/cancellation reply
+        # Use word-boundary regex to avoid false positives like "ok" in "cokes"
+        is_confirmation_reply = False
+        if is_awaiting_confirmation:
+            is_confirm = any(
+                re.search(r"\b" + re.escape(kw) + r"\b", user_lower)
+                for kw in CONFIRM_KEYWORDS
             )
-            self.llm().invoke(conversational_prompt)
+            is_cancel = any(
+                re.search(r"\b" + re.escape(kw) + r"\b", user_lower)
+                for kw in CANCEL_KEYWORDS
+            )
+            if is_confirm or is_cancel:
+                is_confirmation_reply = True
+
+        # Check if any order-related keyword appears in the message
+        has_order_intent = any(kw in user_lower for kw in ORDER_KEYWORDS)
+
+        if self.verbose:
+            print(
+                f"[intake_node] message='{user_message}', "
+                f"has_order_intent={has_order_intent}, "
+                f"is_confirmation_reply={is_confirmation_reply}, "
+                f"is_awaiting_confirmation={is_awaiting_confirmation}"
+            )
+
+        completed = list(state.get("completed_steps", []))
+        if "intake" not in completed:
+            completed.append("intake")
+
+        return {
+            "has_order_intent": has_order_intent,
+            "is_confirmation_reply": is_confirmation_reply,
+            "completed_steps": completed,
+        }
+
+    def _extraction_node(self, state: OrderState) -> dict[str, Any]:
+        """Step 1: Extract items and quantities from the user's order message.
+
+        Uses the extraction sub-agent (LLM + tool) so the tool call is
+        visible in the UI.
+        """
+        user_message = _extract_latest_user_message(state)
+
+        if self.verbose:
+            print(f"[extraction_node] Input: {user_message}")
+
+        # Ask the extraction agent to parse the user's order
+        context_msg = HumanMessage(
+            content=(
+                f"The customer said: {user_message}\n\n"
+                "Please extract the food items and quantities from this message "
+                "using the extract_order_items tool. After calling the tool, "
+                "summarize what you found in a brief friendly sentence."
+            )
+        )
+        result = self._extraction_agent.invoke({"messages": [context_msg]})
+
+        # Get the raw tool output (JSON) from the result
+        extracted_json = _extract_tool_output(result, "extract_order_items")
+        if not extracted_json:
+            extracted_json = _last_ai_content(result)
+
+        if self.verbose:
+            print(f"[extraction_node] Output: {extracted_json}")
+
+        completed = list(state.get("completed_steps", []))
+        if "extraction" not in completed:
+            completed.append("extraction")
+
+        return {
+            "extracted_items": extracted_json,
+            "completed_steps": completed,
+        }
+
+    def _validation_node(self, state: OrderState) -> dict[str, Any]:
+        """Step 2: Validate the extracted items against the menu and quantity limits.
+
+        Uses the validation sub-agent (LLM + tool) so the tool call is
+        visible in the UI.
+        """
+        extracted_items = state.get("extracted_items", "{}")
+
+        if self.verbose:
+            print(f"[validation_node] Input: {extracted_items}")
+
+        # Ask the validation agent to check the order
+        context_msg = HumanMessage(
+            content=(
+                f"Please validate this order using the validate_order tool:\n"
+                f"{extracted_items}\n\n"
+                "After calling the tool, summarize whether the order is valid "
+                "in a brief friendly sentence."
+            )
+        )
+        result = self._validation_agent.invoke({"messages": [context_msg]})
+
+        # Get the raw tool output
+        validation_json = _extract_tool_output(result, "validate_order")
+        if not validation_json:
+            validation_json = _last_ai_content(result)
+
+        # Parse is_valid from the validation result
+        is_valid = False
+        try:
+            validation_data = json.loads(validation_json)
+            is_valid = validation_data.get("is_valid", False)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        if self.verbose:
+            print(f"[validation_node] is_valid = {is_valid}")
+
+        completed = list(state.get("completed_steps", []))
+        if "validation" not in completed:
+            completed.append("validation")
+
+        return {
+            "validation_result": validation_json,
+            "is_valid": is_valid,
+            "completed_steps": completed,
+        }
+
+    def _pricing_node(self, state: OrderState) -> dict[str, Any]:
+        """Step 3: Calculate the total price (only reached if validation passed).
+
+        Uses the pricing sub-agent (LLM + tool) so the tool call is
+        visible in the UI.
+        """
+        extracted_items = state.get("extracted_items", "{}")
+
+        if self.verbose:
+            print(f"[pricing_node] Input: {extracted_items}")
+
+        # Ask the pricing agent to calculate the total
+        context_msg = HumanMessage(
+            content=(
+                f"Please calculate the price using the calculate_order_price tool:\n"
+                f"{extracted_items}\n\n"
+                "After calling the tool, present the pricing as a clear summary "
+                "with line items and total. Write prices as 'X dollars'."
+            )
+        )
+        result = self._pricing_agent.invoke({"messages": [context_msg]})
+
+        pricing_json = _extract_tool_output(result, "calculate_order_price")
+        if not pricing_json:
+            pricing_json = _last_ai_content(result)
+
+        if self.verbose:
+            print(f"[pricing_node] Output: {pricing_json}")
+
+        completed = list(state.get("completed_steps", []))
+        if "pricing" not in completed:
+            completed.append("pricing")
+
+        return {
+            "pricing_result": pricing_json,
+            "completed_steps": completed,
+        }
+
+    def _confirmation_node(self, state: OrderState) -> dict[str, Any]:
+        """Step 4: Process the user's confirmation reply (yes/no).
+
+        This node is reached when the user replies to a confirmation prompt.
+        It extracts the order summary from the conversation history and
+        builds the confirmation result.
+        """
+        user_message = _extract_latest_user_message(state)
+        user_lower = user_message.lower().strip()
+
+        # Determine if user confirmed or cancelled
+        is_confirmed = any(kw in user_lower for kw in CONFIRM_KEYWORDS)
+
+        if self.verbose:
+            print(
+                f"[confirmation_node] user_message='{user_message}', "
+                f"is_confirmed={is_confirmed}"
+            )
+
+        if not is_confirmed:
+            # User cancelled — store cancellation result
+            confirmation_json = json.dumps(
+                {
+                    "confirmed": False,
+                    "message": "Order cancelled by customer.",
+                    "grand_total": 0,
+                }
+            )
         else:
-            combined = "\n\n".join(sections)
-            synthesis_prompt = (
-                "You are a helpful data-processing assistant presenting results to the user.\n\n"
-                "Below are the results from specialist agents that processed the user's request. "
-                "Synthesise them into a single, clear, well-formatted markdown response.\n\n"
-                "Rules:\n"
-                "- Do NOT expose internal agent names or technical routing details.\n"
-                "- Present results naturally as if you did all the work yourself.\n"
-                "- If a chart image (base64) is included, preserve the markdown image tag exactly.\n"
-                "- Explain results clearly and concisely.\n"
-                "- Use headers and formatting for readability.\n\n"
-                f"Specialist results:\n{combined}"
-            )
-            self.llm().invoke(synthesis_prompt)
+            # User confirmed — extract the grand total and order summary
+            # from the conversation history (human-readable AI messages)
+            grand_total = _extract_total_from_history(state)
+            order_summary = _extract_order_summary_from_history(state)
 
+            confirmation_json = json.dumps(
+                {
+                    "confirmed": True,
+                    "message": "Order confirmed!",
+                    "grand_total": grand_total,
+                    "order_summary": order_summary,
+                }
+            )
+
+        if self.verbose:
+            print(f"[confirmation_node] Output: {confirmation_json}")
+
+        completed = list(state.get("completed_steps", []))
+        if "confirmation" not in completed:
+            completed.append("confirmation")
+
+        return {
+            "confirmation_result": confirmation_json,
+            "is_valid": is_confirmed,
+            "completed_steps": completed,
+        }
+
+    def _final_response_node(self, state: OrderState) -> dict[str, Any]:
+        """Step 5: Format and return the final response to the customer.
+
+        This is the terminal node. It uses the LLM to stream the response
+        back to the user via AG-UI events.
+
+        Handles 4 scenarios:
+        - Greeting (no order): conversational reply with menu
+        - Valid order (not yet confirmed): show summary + ask for confirmation
+        - Confirmed order: show confirmation message
+        - Invalid order: show errors + menu
+        """
+        is_valid = state.get("is_valid", False)
+        is_confirmation_reply = state.get("is_confirmation_reply", False)
+        has_order_intent = state.get("has_order_intent", False)
+
+        if self.verbose:
+            print(
+                f"[final_response_node] is_valid={is_valid}, "
+                f"is_confirmation_reply={is_confirmation_reply}, "
+                f"has_order_intent={has_order_intent}"
+            )
+
+        # Scenario 1: User just confirmed/cancelled an order
+        if is_confirmation_reply:
+            confirmation_data = state.get("confirmation_result", "{}")
+            try:
+                conf = json.loads(confirmation_data)
+                if conf.get("confirmed", False):
+                    prompt = (
+                        "You are a Smart Order Assistant. The customer just confirmed "
+                        "their order. Present a cheerful confirmation message.\n\n"
+                        "Rules:\n"
+                        "- Use emojis and friendly language\n"
+                        "- Show the order details if available\n"
+                        "- Thank the customer\n"
+                        "- Write prices as 'X dollars' not with dollar signs\n\n"
+                        f"Confirmation data:\n{confirmation_data}"
+                    )
+                else:
+                    prompt = (
+                        "You are a Smart Order Assistant. The customer cancelled "
+                        "their order. Respond politely and let them know they can "
+                        "order again anytime.\n\n"
+                        "Keep it short and friendly — 1-2 sentences."
+                    )
+            except (json.JSONDecodeError, TypeError):
+                prompt = (
+                    "You are a Smart Order Assistant. Something went wrong with "
+                    "the confirmation. Apologize and ask the customer to try again."
+                )
+            self.llm().invoke(prompt)
+            return {}
+
+        # Scenario 2: Valid order just priced — ask for confirmation
+        if is_valid and has_order_intent:
+            pricing_data = state.get("pricing_result", "{}")
+            prompt = (
+                "You are a Smart Order Assistant. The customer placed an order "
+                "and it has been validated and priced. Present the order summary "
+                "and ASK the customer to confirm.\n\n"
+                "Rules:\n"
+                "- Show each item with quantity and price\n"
+                "- Show the grand total\n"
+                "- Use emojis\n"
+                "- Write prices as 'X dollars' not with dollar signs\n"
+                "- End by asking: 'Would you like to confirm this order? "
+                "Reply yes to confirm or no to cancel.'\n\n"
+                f"Pricing data:\n{pricing_data}"
+            )
+            self.llm().invoke(prompt)
+            return {}
+
+        # Scenario 3: Invalid order — show errors
+        if has_order_intent and not is_valid:
+            validation_data = state.get("validation_result", "{}")
+            prompt = (
+                "You are a Smart Order Assistant. The customer tried to order "
+                "but there were problems. Explain what went wrong and show the menu.\n\n"
+                "Rules:\n"
+                "- Be friendly and helpful\n"
+                "- List the specific errors\n"
+                "- Show the menu: Pizza (10 dollars), Burger (8 dollars), Coke (3 dollars)\n"
+                "- Maximum 10 of any item\n"
+                "- Write prices as 'X dollars' not with dollar signs\n\n"
+                f"Validation data:\n{validation_data}"
+            )
+            self.llm().invoke(prompt)
+            return {}
+
+        # Scenario 4: Greeting / general message — respond conversationally
+        user_message = _extract_latest_user_message(state)
+        prompt = (
+            "You are a friendly Smart Order Assistant for a restaurant.\n"
+            "The customer sent a message that doesn't seem to be a food order.\n\n"
+            "Respond naturally and warmly. Mention our menu:\n"
+            "  - Pizza: 10 dollars\n"
+            "  - Burger: 8 dollars\n"
+            "  - Coke: 3 dollars\n\n"
+            "Maximum 10 of any item per order.\n"
+            "Keep your response short and friendly — 2-3 sentences max.\n"
+            "Do NOT use dollar signs. Write prices as 'X dollars'.\n\n"
+            f"Customer message: {user_message}"
+        )
+        self.llm().invoke(prompt)
         return {}
 
     # ------------------------------------------------------------------
-    # Workflow graph
+    # Workflow graph — defines the order of agent execution
     # ------------------------------------------------------------------
 
     @property
-    def workflow(self) -> StateGraph[DataProcessingState]:  # type: ignore[override]
-        graph: StateGraph[DataProcessingState] = StateGraph(DataProcessingState)
+    def workflow(self) -> StateGraph[OrderState]:  # type: ignore[override]
+        """Build the LangGraph workflow for the Smart Order Assistant.
 
-        # Register nodes
+        The flow is:
+          START → intake → [conditional: what kind of message?]
+            ├─ order intent → extraction → validation → [conditional: valid?]
+            │                   ├─ valid   → pricing → final_response (ask confirm) → END
+            │                   └─ invalid → final_response (show errors) → END
+            ├─ confirmation reply → confirmation → final_response (confirmed/cancelled) → END
+            └─ greeting → final_response (conversational) → END
+        """
+        graph: StateGraph[OrderState] = StateGraph(OrderState)
+
+        # --- Register all 6 nodes ---
         graph.add_node("intake_node", self._intake_node)
-        graph.add_node("supervisor_node", self._supervisor_node)
-        graph.add_node("analysis_node", self._analysis_node)
-        graph.add_node("visualization_node", self._visualization_node)
-        graph.add_node("calculation_node", self._calculation_node)
-        graph.add_node("pii_node", self._pii_node)
-        graph.add_node("presenter_node", self._presenter_node)
+        graph.add_node("extraction_node", self._extraction_node)
+        graph.add_node("validation_node", self._validation_node)
+        graph.add_node("pricing_node", self._pricing_node)
+        graph.add_node("confirmation_node", self._confirmation_node)
+        graph.add_node("final_response_node", self._final_response_node)
 
-        # Entry point
+        # --- Define the edges (connections between nodes) ---
+
+        # Entry point: start with the intake check
         graph.add_edge(START, "intake_node")
 
-        # Intake always goes to supervisor
-        graph.add_edge("intake_node", "supervisor_node")
-
-        # Supervisor → specialist or presenter (conditional)
+        # After intake, use conditional routing:
+        #   - If confirmation reply → go to confirmation node
+        #   - If order intent → go to extraction
+        #   - Otherwise → go to final response (conversational)
         graph.add_conditional_edges(
-            "supervisor_node",
-            _route_supervisor,
+            "intake_node",
+            _route_after_intake,
             {
-                "analysis_node": "analysis_node",
-                "visualization_node": "visualization_node",
-                "calculation_node": "calculation_node",
-                "pii_node": "pii_node",
-                "presenter_node": "presenter_node",
+                "extraction_node": "extraction_node",
+                "confirmation_node": "confirmation_node",
+                "final_response_node": "final_response_node",
             },
         )
 
-        # All specialist nodes return to supervisor after completion
-        graph.add_edge("analysis_node", "supervisor_node")
-        graph.add_edge("visualization_node", "supervisor_node")
-        graph.add_edge("calculation_node", "supervisor_node")
-        graph.add_edge("pii_node", "supervisor_node")
+        # After extraction, always validate
+        graph.add_edge("extraction_node", "validation_node")
 
-        # Presenter is the final node
-        graph.add_edge("presenter_node", END)
+        # After validation, use conditional routing:
+        #   - If valid → go to pricing
+        #   - If invalid → skip to final response
+        graph.add_conditional_edges(
+            "validation_node",
+            _route_after_validation,
+            {
+                "pricing_node": "pricing_node",
+                "final_response_node": "final_response_node",
+            },
+        )
+
+        # After pricing, go to final response (which asks for confirmation)
+        graph.add_edge("pricing_node", "final_response_node")
+
+        # After confirmation, go to final response (which shows result)
+        graph.add_edge("confirmation_node", "final_response_node")
+
+        # Final response is the last node
+        graph.add_edge("final_response_node", END)
 
         return graph
 
     # ------------------------------------------------------------------
-    # Keep agent_node for backward compatibility (single-agent fallback)
+    # Backward-compatible single agent_node (fallback)
     # ------------------------------------------------------------------
 
     @property
     def agent_node(self) -> Any:
+        """Single-agent fallback that can handle the full order flow."""
+        menu_str = ", ".join(f"{k} ({v} dollars)" for k, v in MENU.items())
         return create_agent(
             self.llm(),
             tools=self.tools + self.mcp_tools + self._workflow_tools,
             system_prompt=make_system_prompt(
-                "You are a powerful data-processing assistant with four specialized tools.\n"
+                "You are a Smart Order Assistant for a restaurant.\n"
+                "\n"
+                "## Menu\n"
+                f"{menu_str}\n"
                 "\n"
                 "## Your Tools\n"
                 "\n"
-                "1. **PII Remover** (`remove_pii`): Detects and redacts personally "
-                "identifiable information from text, including emails, phone numbers, "
-                "SSNs, credit card numbers, IP addresses, and dates of birth.\n"
+                "1. **Order Extractor** (`extract_order_items`): Extracts food items "
+                "and quantities from the customer's message.\n"
                 "\n"
-                "2. **Chart Generator** (`generate_chart`): Creates charts (bar, line, "
-                "pie, scatter, histogram) from JSON data and returns them as base64 "
-                "PNG images.\n"
+                "2. **Order Validator** (`validate_order`): Checks that items are on "
+                "the menu and quantities are between 1 and 10.\n"
                 "\n"
-                "3. **Data Analyzer** (`analyze_data`): Loads JSON data into a pandas "
-                "DataFrame and performs analysis operations like describe, head, filter, "
-                "groupby, value_counts, correlation, sort, and more.\n"
+                "3. **Order Pricer** (`calculate_order_price`): Calculates line-item "
+                "prices and the grand total.\n"
                 "\n"
-                "4. **Math Calculator** (`calculate`): Evaluates mathematical expressions "
-                "safely using Python's math library and numpy. Supports arithmetic, "
-                "trigonometry, logarithms, statistics, and linear algebra.\n"
+                "4. **Order Confirmer** (`confirm_order`): Simulates human-in-the-loop "
+                "order confirmation.\n"
+                "\n"
+                "5. **Response Formatter** (`format_order_response`): Formats the final "
+                "response for the customer.\n"
                 "\n"
                 "## Guidelines\n"
                 "\n"
-                "- Use the appropriate tool for each task.\n"
-                "- When the user provides data, use the data analyzer or chart generator.\n"
-                "- When the user asks for calculations, use the math calculator.\n"
-                "- When the user asks to clean or redact PII, use the PII remover.\n"
-                "- You can chain tools: e.g., analyze data, then chart the results.\n"
-                "- Always explain what you did and present results clearly.\n"
+                "- Process orders step by step: extract → validate → price → confirm → respond.\n"
+                "- If validation fails, skip pricing and confirmation.\n"
+                "- Always be friendly and helpful.\n"
+                "- Maximum 10 of any item per order.\n"
             ),
             name="agent",
         )
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helper functions
 # ---------------------------------------------------------------------------
 
 
 def _last_ai_content(result: Any) -> str:
-    """Extract the last AI message content from a react-agent result dict."""
+    """Extract the last AI message content from a react-agent result dict.
+
+    When a sub-agent finishes, its result contains a list of messages.
+    This function finds the last message from the AI and returns its text.
+    """
     msgs = result.get("messages", [])
     for msg in reversed(msgs):
         if isinstance(msg, AIMessage):
@@ -810,8 +938,12 @@ def _last_ai_content(result: Any) -> str:
     return str(result)
 
 
-def _extract_latest_user_message(state: DataProcessingState) -> str:
-    """Extract the latest user message from the conversation."""
+def _extract_latest_user_message(state: OrderState) -> str:
+    """Extract the latest user message from the conversation.
+
+    Looks through the message history backwards to find the most recent
+    message from the human user.
+    """
     messages = state.get("messages", [])
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
@@ -820,21 +952,155 @@ def _extract_latest_user_message(state: DataProcessingState) -> str:
     return ""
 
 
-def _gather_prior_results(state: DataProcessingState) -> str:
-    """Collect results from previously completed specialist agents."""
-    parts: list[str] = []
-    analysis = state.get("analysis_results", {}).get("summary", "")
-    if analysis:
-        parts.append(f"Previous analysis results:\n{analysis}")
-    visualization = state.get("visualization_results", {}).get("summary", "")
-    if visualization:
-        parts.append(f"Previous visualization results:\n{visualization}")
-    calculation = state.get("calculation_results", {}).get("summary", "")
-    if calculation:
-        parts.append(f"Previous calculation results:\n{calculation}")
-    pii = state.get("pii_results", {}).get("summary", "")
-    if pii:
-        parts.append(f"Previous PII removal results:\n{pii}")
-    if parts:
-        return "\n\n".join(parts) + "\n\n"
+def _extract_tool_output(result: Any, tool_name: str) -> str:
+    """Try to extract the raw output of a specific tool from agent results.
+
+    Sub-agents produce ToolMessage objects when they call tools. This
+    function looks for the output of a specific tool by name.
+
+    Args:
+        result: The result dict from invoking a sub-agent.
+        tool_name: The name of the tool whose output we want.
+
+    Returns:
+        The tool's output string, or empty string if not found.
+    """
+    msgs = result.get("messages", [])
+    for msg in reversed(msgs):
+        if hasattr(msg, "name") and msg.name == tool_name:
+            content = msg.content
+            return content if isinstance(content, str) else str(content)
+    return ""
+
+
+def _is_awaiting_confirmation(state: OrderState) -> bool:
+    """Check if the previous assistant message was asking for order confirmation.
+
+    Looks at the conversation history to see if the last AI message
+    contains confirmation-related phrases like "confirm" or "yes to confirm".
+
+    IMPORTANT: We skip the current user's HumanMessage (the latest one)
+    because we need to look at the AI message BEFORE it. We also skip
+    SystemMessages (from the prompt template) that may appear between
+    the AIMessage and HumanMessage.
+    """
+    messages = state.get("messages", [])
+    skipped_first_human = False
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            if not skipped_first_human:
+                # Skip the current user message (e.g., "yes")
+                skipped_first_human = True
+                continue
+            else:
+                # Hit a second user message without finding an AI message — stop
+                break
+        if isinstance(msg, AIMessage):
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            content_lower = content.lower()
+            # Check if the AI was asking for ORDER confirmation specifically.
+            # We require "confirm" to appear alongside an order-related word
+            # to avoid false positives like "would you like to order?"
+            has_confirm_word = any(
+                phrase in content_lower
+                for phrase in [
+                    "yes to confirm",
+                    "reply yes",
+                    "confirm this order",
+                    "confirm your order",
+                    "shall i proceed",
+                    "reply yes to confirm",
+                ]
+            )
+            # Fallback: "confirm" + ("order" or "total") in the same message
+            if not has_confirm_word:
+                has_confirm_word = (
+                    "confirm" in content_lower
+                    and ("order" in content_lower or "total" in content_lower)
+                )
+            if has_confirm_word:
+                return True
+            # Found an AI message but it wasn't asking for confirmation
+            return False
+    return False
+
+
+def _extract_pricing_from_history(state: OrderState) -> str:
+    """Try to extract pricing JSON from the conversation history.
+
+    When the user confirms, we need to find the pricing data from a
+    previous turn. This looks through AI messages for JSON-like content
+    containing pricing information.
+    """
+    messages = state.get("messages", [])
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage):
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            # Try to find JSON with pricing data in the message
+            try:
+                # Look for JSON blocks in the content
+                if "grand_total" in content or "line_items" in content:
+                    # Try to extract JSON from the content
+                    start = content.find("{")
+                    end = content.rfind("}") + 1
+                    if start >= 0 and end > start:
+                        json_str = content[start:end]
+                        data = json.loads(json_str)
+                        if "grand_total" in data or "line_items" in data:
+                            return json_str
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return ""
+
+
+def _extract_total_from_history(state: OrderState) -> int:
+    """Extract the grand total from human-readable AI messages in conversation history.
+
+    Scans AI messages for patterns like "Total: 59 dollars", "Grand Total: 59 dollars",
+    or "💰 Grand Total: 59 dollars". Returns the total as an integer, or 0 if not found.
+
+    This is needed because the pricing data is presented as human-readable text
+    (not JSON) in the conversation, and state is not persisted between turns.
+    """
+    messages = state.get("messages", [])
+    # Patterns to match total amounts in AI messages
+    total_patterns = [
+        r"(?:grand\s+)?total[:\s]+(\d+)\s*dollars",
+        r"💰\s*(?:grand\s+)?total[:\s]+(\d+)\s*dollars",
+        r"total[:\s]+(\d+)",
+    ]
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage):
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            content_lower = content.lower()
+            for pattern in total_patterns:
+                match = re.search(pattern, content_lower)
+                if match:
+                    try:
+                        return int(match.group(1))
+                    except (ValueError, IndexError):
+                        continue
+    return 0
+
+
+def _extract_order_summary_from_history(state: OrderState) -> str:
+    """Extract the order summary text from the AI's confirmation prompt message.
+
+    Looks for the AI message that contains the order summary (the one with
+    emojis and line items that asked the user to confirm). Returns the full
+    text of that message so it can be included in the confirmation data.
+    """
+    messages = state.get("messages", [])
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage):
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            content_lower = content.lower()
+            # The order summary message contains "confirm" and item details
+            if "confirm" in content_lower and (
+                "pizza" in content_lower
+                or "burger" in content_lower
+                or "coke" in content_lower
+                or "total" in content_lower
+            ):
+                return content
     return ""

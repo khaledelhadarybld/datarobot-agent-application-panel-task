@@ -12,21 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 from unittest.mock import ANY, Mock, patch
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 
 from agent import MyAgent
 from agent.myagent import (
-    DataProcessingState,
-    TaskClassification,
+    CANCEL_KEYWORDS,
+    CONFIRM_KEYWORDS,
+    MENU,
+    ORDER_KEYWORDS,
+    OrderState,
     _extract_latest_user_message,
-    _gather_prior_results,
+    _extract_order_summary_from_history,
+    _extract_pricing_from_history,
+    _extract_tool_output,
+    _extract_total_from_history,
+    _is_awaiting_confirmation,
     _last_ai_content,
-    _route_supervisor,
+    _route_after_intake,
+    _route_after_validation,
+)
+from agent.tools import (
+    calculate_order_price,
+    confirm_order,
+    extract_order_items,
+    format_order_response,
+    validate_order,
 )
 
 
@@ -39,6 +55,10 @@ class TestMyAgentLangGraph:
             verbose=True,
             model="datarobot/azure/gpt-5-mini-2025-08-07",
         )
+
+    # ------------------------------------------------------------------
+    # Initialization tests
+    # ------------------------------------------------------------------
 
     def test_init_with_explicit_parameters(self):
         """Test initialization with explicitly provided parameters."""
@@ -127,6 +147,10 @@ class TestMyAgentLangGraph:
 
         with pytest.raises(AttributeError):
             _ = agent.extra_param1
+
+    # ------------------------------------------------------------------
+    # LLM tests
+    # ------------------------------------------------------------------
 
     @pytest.mark.parametrize(
         "api_base,expected_result",
@@ -356,16 +380,49 @@ class TestMyAgentLangGraph:
     # ------------------------------------------------------------------
 
     def test_tools_property(self, agent):
-        """Test that tools returns all four tools."""
+        """Test that tools returns all five order-processing tools."""
         tools = agent.tools
-        assert len(tools) == 4
+        assert len(tools) == 5
         tool_names = {t.name for t in tools}
         assert tool_names == {
-            "remove_pii",
-            "generate_chart",
-            "analyze_data",
-            "calculate",
+            "extract_order_items",
+            "validate_order",
+            "calculate_order_price",
+            "confirm_order",
+            "format_order_response",
         }
+
+    # ------------------------------------------------------------------
+    # Menu constant test
+    # ------------------------------------------------------------------
+
+    def test_menu_constant(self):
+        """Test that the MENU constant has the expected items and prices."""
+        assert MENU == {"pizza": 10, "burger": 8, "coke": 3}
+
+    # ------------------------------------------------------------------
+    # Keyword constants tests
+    # ------------------------------------------------------------------
+
+    def test_order_keywords_constant(self):
+        """Test that ORDER_KEYWORDS contains expected menu items and verbs."""
+        assert "pizza" in ORDER_KEYWORDS
+        assert "burger" in ORDER_KEYWORDS
+        assert "coke" in ORDER_KEYWORDS
+        assert "order" in ORDER_KEYWORDS
+        assert "want" in ORDER_KEYWORDS
+
+    def test_confirm_keywords_constant(self):
+        """Test that CONFIRM_KEYWORDS contains expected confirmation words."""
+        assert "yes" in CONFIRM_KEYWORDS
+        assert "confirm" in CONFIRM_KEYWORDS
+        assert "sure" in CONFIRM_KEYWORDS
+
+    def test_cancel_keywords_constant(self):
+        """Test that CANCEL_KEYWORDS contains expected cancellation words."""
+        assert "no" in CANCEL_KEYWORDS
+        assert "cancel" in CANCEL_KEYWORDS
+        assert "nope" in CANCEL_KEYWORDS
 
     # ------------------------------------------------------------------
     # Workflow and template tests
@@ -378,15 +435,14 @@ class TestMyAgentLangGraph:
             with patch("agent.myagent.create_agent"):
                 workflow = agent.workflow
                 assert workflow is not None
-                # Verify all multi-agent nodes are present
+                # Verify all 6 nodes are present (intake + 5 agent nodes)
                 expected_nodes = {
                     "intake_node",
-                    "supervisor_node",
-                    "analysis_node",
-                    "visualization_node",
-                    "calculation_node",
-                    "pii_node",
-                    "presenter_node",
+                    "extraction_node",
+                    "validation_node",
+                    "pricing_node",
+                    "confirmation_node",
+                    "final_response_node",
                 }
                 assert expected_nodes == set(workflow.nodes.keys())
 
@@ -396,398 +452,511 @@ class TestMyAgentLangGraph:
         assert template is not None
         assert isinstance(template, ChatPromptTemplate)
 
+    def test_prompt_template_contains_menu(self, agent):
+        """Test that the prompt template mentions the menu items."""
+        template = agent.prompt_template
+        messages = template.invoke({"user_prompt_content": "test"}).to_messages()
+        system_msg = messages[0].content
+        assert "pizza" in system_msg.lower()
+        assert "burger" in system_msg.lower()
+        assert "coke" in system_msg.lower()
+
+    # ------------------------------------------------------------------
+    # Route after validation tests
+    # ------------------------------------------------------------------
+
+    def test_route_after_validation_valid(self):
+        """Test routing to pricing_node when order is valid."""
+        state: OrderState = {"is_valid": True}  # type: ignore[assignment]
+        assert _route_after_validation(state) == "pricing_node"
+
+    def test_route_after_validation_invalid(self):
+        """Test routing to final_response_node when order is invalid."""
+        state: OrderState = {"is_valid": False}  # type: ignore[assignment]
+        assert _route_after_validation(state) == "final_response_node"
+
+    def test_route_after_validation_missing_defaults_to_invalid(self):
+        """Test routing defaults to final_response_node when is_valid is missing."""
+        state: OrderState = {}  # type: ignore[assignment]
+        assert _route_after_validation(state) == "final_response_node"
+
+    # ------------------------------------------------------------------
+    # Route after intake tests
+    # ------------------------------------------------------------------
+
+    def test_route_after_intake_with_order_intent(self):
+        """Test routing to extraction_node when order intent is detected."""
+        state: OrderState = {"has_order_intent": True, "is_confirmation_reply": False}  # type: ignore[assignment]
+        assert _route_after_intake(state) == "extraction_node"
+
+    def test_route_after_intake_without_order_intent(self):
+        """Test routing to final_response_node when no order intent."""
+        state: OrderState = {"has_order_intent": False, "is_confirmation_reply": False}  # type: ignore[assignment]
+        assert _route_after_intake(state) == "final_response_node"
+
+    def test_route_after_intake_missing_defaults_to_no_intent(self):
+        """Test routing defaults to final_response_node when fields are missing."""
+        state: OrderState = {}  # type: ignore[assignment]
+        assert _route_after_intake(state) == "final_response_node"
+
+    def test_route_after_intake_confirmation_reply(self):
+        """Test routing to confirmation_node when user is confirming."""
+        state: OrderState = {"has_order_intent": False, "is_confirmation_reply": True}  # type: ignore[assignment]
+        assert _route_after_intake(state) == "confirmation_node"
+
+    def test_route_after_intake_confirmation_takes_priority(self):
+        """Test that confirmation reply takes priority over order intent."""
+        state: OrderState = {"has_order_intent": True, "is_confirmation_reply": True}  # type: ignore[assignment]
+        assert _route_after_intake(state) == "confirmation_node"
+
     # ------------------------------------------------------------------
     # Intake node tests
     # ------------------------------------------------------------------
 
-    def test_intake_node_classifies_request(self, agent):
-        """Test that intake_node calls structured LLM and returns classification."""
-        mock_classification = TaskClassification(
-            needs_analysis=True,
-            needs_visualization=True,
-            needs_calculation=False,
-            needs_pii_removal=False,
+    def test_intake_node_detects_order_intent(self, agent):
+        """Test that intake_node detects order intent from menu keywords."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="I want 2 pizzas")],
+            "completed_steps": [],
+        }
+        result = agent._intake_node(state)
+        assert result["has_order_intent"] is True
+        assert result["is_confirmation_reply"] is False
+        assert "intake" in result["completed_steps"]
+
+    def test_intake_node_detects_no_order_intent(self, agent):
+        """Test that intake_node detects no order intent from greetings."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="Hello there!")],
+            "completed_steps": [],
+        }
+        result = agent._intake_node(state)
+        assert result["has_order_intent"] is False
+        assert result["is_confirmation_reply"] is False
+        assert "intake" in result["completed_steps"]
+
+    def test_intake_node_detects_confirmation_reply(self, agent):
+        """Test that intake_node detects confirmation when AI asked for it."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Would you like to confirm this order? Reply yes to confirm."),
+                HumanMessage(content="yes"),
+            ],
+            "completed_steps": [],
+        }
+        result = agent._intake_node(state)
+        assert result["is_confirmation_reply"] is True
+
+    def test_intake_node_detects_cancellation_reply(self, agent):
+        """Test that intake_node detects cancellation when AI asked for it."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Would you like to confirm this order? Reply yes to confirm."),
+                HumanMessage(content="no"),
+            ],
+            "completed_steps": [],
+        }
+        result = agent._intake_node(state)
+        assert result["is_confirmation_reply"] is True
+
+    def test_intake_node_no_confirmation_without_prompt(self, agent):
+        """Test that 'yes' is not treated as confirmation without a prior prompt."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="yes")],
+            "completed_steps": [],
+        }
+        result = agent._intake_node(state)
+        assert result["is_confirmation_reply"] is False
+
+    def test_intake_node_case_insensitive(self, agent):
+        """Test that intake_node keyword matching is case-insensitive."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="I WANT A BURGER")],
+            "completed_steps": [],
+        }
+        result = agent._intake_node(state)
+        assert result["has_order_intent"] is True
+
+    # ------------------------------------------------------------------
+    # Sub-agent factory tests
+    # ------------------------------------------------------------------
+
+    @patch("agent.myagent.create_agent")
+    def test_extraction_agent_created_with_correct_tool(self, mock_create_agent, agent):
+        """Test that _extraction_agent is created with extract_order_items tool."""
+        mock_llm = Mock()
+        with patch.object(agent, "llm", return_value=mock_llm):
+            with patch.object(
+                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
+            ):
+                _ = agent._extraction_agent
+                mock_create_agent.assert_called_once()
+                _, kwargs = mock_create_agent.call_args
+                tool_names = {t.name for t in kwargs["tools"]}
+                assert "extract_order_items" in tool_names
+                assert kwargs["name"] == "extraction_agent"
+
+    @patch("agent.myagent.create_agent")
+    def test_validation_agent_created_with_correct_tool(self, mock_create_agent, agent):
+        """Test that _validation_agent is created with validate_order tool."""
+        mock_llm = Mock()
+        with patch.object(agent, "llm", return_value=mock_llm):
+            with patch.object(
+                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
+            ):
+                _ = agent._validation_agent
+                mock_create_agent.assert_called_once()
+                _, kwargs = mock_create_agent.call_args
+                tool_names = {t.name for t in kwargs["tools"]}
+                assert "validate_order" in tool_names
+                assert kwargs["name"] == "validation_agent"
+
+    @patch("agent.myagent.create_agent")
+    def test_pricing_agent_created_with_correct_tool(self, mock_create_agent, agent):
+        """Test that _pricing_agent is created with calculate_order_price tool."""
+        mock_llm = Mock()
+        with patch.object(agent, "llm", return_value=mock_llm):
+            with patch.object(
+                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
+            ):
+                _ = agent._pricing_agent
+                mock_create_agent.assert_called_once()
+                _, kwargs = mock_create_agent.call_args
+                tool_names = {t.name for t in kwargs["tools"]}
+                assert "calculate_order_price" in tool_names
+                assert kwargs["name"] == "pricing_agent"
+
+    @patch("agent.myagent.create_agent")
+    def test_confirmation_agent_created_with_correct_tool(
+        self, mock_create_agent, agent
+    ):
+        """Test that _confirmation_agent is created with confirm_order tool."""
+        mock_llm = Mock()
+        with patch.object(agent, "llm", return_value=mock_llm):
+            with patch.object(
+                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
+            ):
+                _ = agent._confirmation_agent
+                mock_create_agent.assert_called_once()
+                _, kwargs = mock_create_agent.call_args
+                tool_names = {t.name for t in kwargs["tools"]}
+                assert "confirm_order" in tool_names
+                assert kwargs["name"] == "confirmation_agent"
+
+    @patch("agent.myagent.create_agent")
+    def test_final_response_agent_created_with_correct_tool(
+        self, mock_create_agent, agent
+    ):
+        """Test that _final_response_agent is created with format_order_response tool."""
+        mock_llm = Mock()
+        with patch.object(agent, "llm", return_value=mock_llm):
+            with patch.object(
+                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
+            ):
+                _ = agent._final_response_agent
+                mock_create_agent.assert_called_once()
+                _, kwargs = mock_create_agent.call_args
+                tool_names = {t.name for t in kwargs["tools"]}
+                assert "format_order_response" in tool_names
+                assert kwargs["name"] == "final_response_agent"
+
+    # ------------------------------------------------------------------
+    # Node wrapper tests
+    # ------------------------------------------------------------------
+
+    def test_extraction_node_stores_results(self, agent):
+        """Test that _extraction_node invokes the sub-agent and stores extracted items."""
+        mock_agent = Mock()
+        mock_agent.invoke.return_value = {
+            "messages": [
+                ToolMessage(
+                    content='{"items": [{"item": "pizza", "quantity": 2}]}',
+                    name="extract_order_items",
+                    tool_call_id="1",
+                ),
+                AIMessage(content="I found 2 pizzas in your order."),
+            ]
+        }
+
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="I want 2 pizzas")],
+            "completed_steps": [],
+            "extracted_items": "",
+        }
+
+        with patch.object(
+            type(agent),
+            "_extraction_agent",
+            new_callable=lambda: property(lambda self: mock_agent),
+        ):
+            result = agent._extraction_node(state)
+
+        assert "extraction" in result["completed_steps"]
+        assert "extracted_items" in result
+        data = json.loads(result["extracted_items"])
+        assert "items" in data
+
+    def test_validation_node_stores_results_valid(self, agent):
+        """Test that _validation_node correctly identifies a valid order."""
+        valid_json = json.dumps(
+            {"is_valid": True, "items": [{"item": "pizza", "quantity": 2}], "errors": []}
         )
-        mock_structured_llm = Mock()
-        mock_structured_llm.invoke.return_value = mock_classification
+        mock_agent = Mock()
+        mock_agent.invoke.return_value = {
+            "messages": [
+                ToolMessage(content=valid_json, name="validate_order", tool_call_id="1"),
+                AIMessage(content="All items are valid!"),
+            ]
+        }
 
-        mock_llm = Mock()
-        mock_llm.with_structured_output.return_value = mock_structured_llm
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="I want 2 pizzas")],
+            "completed_steps": ["extraction"],
+            "extracted_items": '{"items": [{"item": "pizza", "quantity": 2}]}',
+        }
 
-        with patch.object(agent, "llm", return_value=mock_llm):
-            state: DataProcessingState = {  # type: ignore[assignment]
-                "messages": [HumanMessage(content="Analyse this data and chart it")],
-                "needs_analysis": False,
-                "needs_visualization": False,
-                "needs_calculation": False,
-                "needs_pii_removal": False,
-                "analysis_results": {},
-                "visualization_results": {},
-                "calculation_results": {},
-                "pii_results": {},
-                "next_agent": "",
-                "completed_steps": [],
+        with patch.object(
+            type(agent),
+            "_validation_agent",
+            new_callable=lambda: property(lambda self: mock_agent),
+        ):
+            result = agent._validation_node(state)
+
+        assert "validation" in result["completed_steps"]
+        assert result["is_valid"] is True
+
+    def test_validation_node_stores_results_invalid(self, agent):
+        """Test that _validation_node correctly identifies an invalid order."""
+        invalid_json = json.dumps(
+            {"is_valid": False, "items": [{"item": "sushi", "quantity": 1}], "errors": ["'sushi' is not on the menu."]}
+        )
+        mock_agent = Mock()
+        mock_agent.invoke.return_value = {
+            "messages": [
+                ToolMessage(content=invalid_json, name="validate_order", tool_call_id="1"),
+                AIMessage(content="Sorry, sushi is not on our menu."),
+            ]
+        }
+
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="I want sushi")],
+            "completed_steps": ["extraction"],
+            "extracted_items": '{"items": [{"item": "sushi", "quantity": 1}]}',
+        }
+
+        with patch.object(
+            type(agent),
+            "_validation_agent",
+            new_callable=lambda: property(lambda self: mock_agent),
+        ):
+            result = agent._validation_node(state)
+
+        assert "validation" in result["completed_steps"]
+        assert result["is_valid"] is False
+
+    def test_pricing_node_stores_results(self, agent):
+        """Test that _pricing_node invokes the sub-agent and stores pricing data."""
+        pricing_json = json.dumps(
+            {
+                "line_items": [{"item": "pizza", "quantity": 2, "unit_price": 10, "line_total": 20}],
+                "grand_total": 20,
             }
-            result = agent._intake_node(state)
-
-            assert result["needs_analysis"] is True
-            assert result["needs_visualization"] is True
-            assert result["needs_calculation"] is False
-            assert result["needs_pii_removal"] is False
-
-    # ------------------------------------------------------------------
-    # Supervisor node tests
-    # ------------------------------------------------------------------
-
-    def test_supervisor_routes_to_analysis_first(self, agent):
-        """Test supervisor routes to analysis when it's needed and not done."""
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "needs_analysis": True,
-            "needs_visualization": True,
-            "needs_calculation": False,
-            "needs_pii_removal": False,
-            "completed_steps": [],
-        }
-        result = agent._supervisor_node(state)
-        assert result["next_agent"] == "analysis"
-
-    def test_supervisor_routes_to_visualization_after_analysis(self, agent):
-        """Test supervisor routes to visualization after analysis is done."""
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "needs_analysis": True,
-            "needs_visualization": True,
-            "needs_calculation": False,
-            "needs_pii_removal": False,
-            "completed_steps": ["analysis"],
-        }
-        result = agent._supervisor_node(state)
-        assert result["next_agent"] == "visualization"
-
-    def test_supervisor_routes_to_calculation(self, agent):
-        """Test supervisor routes to calculation when needed."""
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "needs_analysis": False,
-            "needs_visualization": False,
-            "needs_calculation": True,
-            "needs_pii_removal": False,
-            "completed_steps": [],
-        }
-        result = agent._supervisor_node(state)
-        assert result["next_agent"] == "calculation"
-
-    def test_supervisor_routes_to_pii(self, agent):
-        """Test supervisor routes to PII when needed."""
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "needs_analysis": False,
-            "needs_visualization": False,
-            "needs_calculation": False,
-            "needs_pii_removal": True,
-            "completed_steps": [],
-        }
-        result = agent._supervisor_node(state)
-        assert result["next_agent"] == "pii"
-
-    def test_supervisor_routes_to_finish_when_all_done(self, agent):
-        """Test supervisor routes to FINISH when all needed tasks are completed."""
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "needs_analysis": True,
-            "needs_visualization": True,
-            "needs_calculation": False,
-            "needs_pii_removal": False,
-            "completed_steps": ["analysis", "visualization"],
-        }
-        result = agent._supervisor_node(state)
-        assert result["next_agent"] == "FINISH"
-
-    def test_supervisor_routes_to_finish_when_nothing_needed(self, agent):
-        """Test supervisor routes to FINISH when no tasks are needed."""
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "needs_analysis": False,
-            "needs_visualization": False,
-            "needs_calculation": False,
-            "needs_pii_removal": False,
-            "completed_steps": [],
-        }
-        result = agent._supervisor_node(state)
-        assert result["next_agent"] == "FINISH"
-
-    # ------------------------------------------------------------------
-    # Route supervisor function tests
-    # ------------------------------------------------------------------
-
-    def test_route_supervisor_analysis(self):
-        """Test _route_supervisor returns analysis_node."""
-        state: DataProcessingState = {"next_agent": "analysis"}  # type: ignore[assignment]
-        assert _route_supervisor(state) == "analysis_node"
-
-    def test_route_supervisor_visualization(self):
-        """Test _route_supervisor returns visualization_node."""
-        state: DataProcessingState = {"next_agent": "visualization"}  # type: ignore[assignment]
-        assert _route_supervisor(state) == "visualization_node"
-
-    def test_route_supervisor_calculation(self):
-        """Test _route_supervisor returns calculation_node."""
-        state: DataProcessingState = {"next_agent": "calculation"}  # type: ignore[assignment]
-        assert _route_supervisor(state) == "calculation_node"
-
-    def test_route_supervisor_pii(self):
-        """Test _route_supervisor returns pii_node."""
-        state: DataProcessingState = {"next_agent": "pii"}  # type: ignore[assignment]
-        assert _route_supervisor(state) == "pii_node"
-
-    def test_route_supervisor_finish(self):
-        """Test _route_supervisor returns presenter_node for FINISH."""
-        state: DataProcessingState = {"next_agent": "FINISH"}  # type: ignore[assignment]
-        assert _route_supervisor(state) == "presenter_node"
-
-    def test_route_supervisor_unknown_defaults_to_presenter(self):
-        """Test _route_supervisor defaults to presenter_node for unknown values."""
-        state: DataProcessingState = {"next_agent": "unknown"}  # type: ignore[assignment]
-        assert _route_supervisor(state) == "presenter_node"
-
-    # ------------------------------------------------------------------
-    # Specialist sub-agent factory tests
-    # ------------------------------------------------------------------
-
-    @patch("agent.myagent.create_agent")
-    def test_analysis_agent_created_with_correct_tool(self, mock_create_agent, agent):
-        """Test that _analysis_agent is created with analyze_data tool."""
-        mock_llm = Mock()
-        with patch.object(agent, "llm", return_value=mock_llm):
-            with patch.object(
-                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
-            ):
-                _ = agent._analysis_agent
-                mock_create_agent.assert_called_once()
-                _, kwargs = mock_create_agent.call_args
-                tool_names = {t.name for t in kwargs["tools"]}
-                assert "analyze_data" in tool_names
-                assert kwargs["name"] == "analysis_agent"
-
-    @patch("agent.myagent.create_agent")
-    def test_visualization_agent_created_with_correct_tool(
-        self, mock_create_agent, agent
-    ):
-        """Test that _visualization_agent is created with generate_chart tool."""
-        mock_llm = Mock()
-        with patch.object(agent, "llm", return_value=mock_llm):
-            with patch.object(
-                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
-            ):
-                _ = agent._visualization_agent
-                mock_create_agent.assert_called_once()
-                _, kwargs = mock_create_agent.call_args
-                tool_names = {t.name for t in kwargs["tools"]}
-                assert "generate_chart" in tool_names
-                assert kwargs["name"] == "visualization_agent"
-
-    @patch("agent.myagent.create_agent")
-    def test_calculation_agent_created_with_correct_tool(
-        self, mock_create_agent, agent
-    ):
-        """Test that _calculation_agent is created with calculate tool."""
-        mock_llm = Mock()
-        with patch.object(agent, "llm", return_value=mock_llm):
-            with patch.object(
-                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
-            ):
-                _ = agent._calculation_agent
-                mock_create_agent.assert_called_once()
-                _, kwargs = mock_create_agent.call_args
-                tool_names = {t.name for t in kwargs["tools"]}
-                assert "calculate" in tool_names
-                assert kwargs["name"] == "calculation_agent"
-
-    @patch("agent.myagent.create_agent")
-    def test_pii_agent_created_with_correct_tool(self, mock_create_agent, agent):
-        """Test that _pii_agent is created with remove_pii tool."""
-        mock_llm = Mock()
-        with patch.object(agent, "llm", return_value=mock_llm):
-            with patch.object(
-                type(agent), "mcp_tools", new_callable=lambda: property(lambda self: [])
-            ):
-                _ = agent._pii_agent
-                mock_create_agent.assert_called_once()
-                _, kwargs = mock_create_agent.call_args
-                tool_names = {t.name for t in kwargs["tools"]}
-                assert "remove_pii" in tool_names
-                assert kwargs["name"] == "pii_agent"
-
-    # ------------------------------------------------------------------
-    # Sub-agent node wrapper tests
-    # ------------------------------------------------------------------
-
-    def test_analysis_node_stores_results(self, agent):
-        """Test that _analysis_node invokes the agent and stores results."""
+        )
         mock_agent = Mock()
         mock_agent.invoke.return_value = {
-            "messages": [AIMessage(content="Analysis complete: 5 rows, 3 columns")]
+            "messages": [
+                ToolMessage(content=pricing_json, name="calculate_order_price", tool_call_id="1"),
+                AIMessage(content="2x pizza = 20 dollars. Total: 20 dollars."),
+            ]
         }
 
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "messages": [HumanMessage(content="Analyse this data")],
-            "completed_steps": [],
-            "analysis_results": {},
-            "visualization_results": {},
-            "calculation_results": {},
-            "pii_results": {},
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="I want 2 pizzas")],
+            "completed_steps": ["extraction", "validation"],
+            "extracted_items": '{"items": [{"item": "pizza", "quantity": 2}]}',
         }
 
         with patch.object(
             type(agent),
-            "_analysis_agent",
+            "_pricing_agent",
             new_callable=lambda: property(lambda self: mock_agent),
         ):
-            result = agent._analysis_node(state)
+            result = agent._pricing_node(state)
 
-        assert "analysis" in result["completed_steps"]
-        assert "summary" in result["analysis_results"]
-        assert "Analysis complete" in result["analysis_results"]["summary"]
+        assert "pricing" in result["completed_steps"]
+        assert "pricing_result" in result
 
-    def test_visualization_node_stores_results(self, agent):
-        """Test that _visualization_node invokes the agent and stores results."""
+    def test_confirmation_node_user_confirms(self, agent):
+        """Test that _confirmation_node processes a 'yes' reply correctly."""
+        confirmation_json = json.dumps(
+            {"confirmed": True, "message": "Order confirmed!", "grand_total": 20}
+        )
         mock_agent = Mock()
         mock_agent.invoke.return_value = {
-            "messages": [AIMessage(content="Chart generated successfully")]
+            "messages": [
+                ToolMessage(content=confirmation_json, name="confirm_order", tool_call_id="1"),
+                AIMessage(content="Your order has been confirmed!"),
+            ]
         }
 
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "messages": [HumanMessage(content="Create a bar chart")],
-            "completed_steps": [],
-            "analysis_results": {},
-            "visualization_results": {},
-            "calculation_results": {},
-            "pii_results": {},
-        }
-
-        with patch.object(
-            type(agent),
-            "_visualization_agent",
-            new_callable=lambda: property(lambda self: mock_agent),
-        ):
-            result = agent._visualization_node(state)
-
-        assert "visualization" in result["completed_steps"]
-        assert "summary" in result["visualization_results"]
-
-    def test_calculation_node_stores_results(self, agent):
-        """Test that _calculation_node invokes the agent and stores results."""
-        mock_agent = Mock()
-        mock_agent.invoke.return_value = {"messages": [AIMessage(content="Result: 42")]}
-
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "messages": [HumanMessage(content="Calculate 6 * 7")],
-            "completed_steps": [],
-            "analysis_results": {},
-            "visualization_results": {},
-            "calculation_results": {},
-            "pii_results": {},
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content='Your total is 20 dollars. {"grand_total": 20, "line_items": []}'),
+                HumanMessage(content="yes"),
+            ],
+            "completed_steps": ["intake"],
         }
 
         with patch.object(
             type(agent),
-            "_calculation_agent",
+            "_confirmation_agent",
             new_callable=lambda: property(lambda self: mock_agent),
         ):
-            result = agent._calculation_node(state)
+            result = agent._confirmation_node(state)
 
-        assert "calculation" in result["completed_steps"]
-        assert "summary" in result["calculation_results"]
-        assert "42" in result["calculation_results"]["summary"]
+        assert "confirmation" in result["completed_steps"]
+        assert result["is_valid"] is True
 
-    def test_pii_node_stores_results(self, agent):
-        """Test that _pii_node invokes the agent and stores results."""
-        mock_agent = Mock()
-        mock_agent.invoke.return_value = {
-            "messages": [AIMessage(content="PII redacted: 2 emails found")]
+    def test_confirmation_node_user_cancels(self, agent):
+        """Test that _confirmation_node processes a 'no' reply correctly."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Would you like to confirm? Reply yes to confirm."),
+                HumanMessage(content="no"),
+            ],
+            "completed_steps": ["intake"],
         }
 
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "messages": [HumanMessage(content="Remove PII from this text")],
-            "completed_steps": [],
-            "analysis_results": {},
-            "visualization_results": {},
-            "calculation_results": {},
-            "pii_results": {},
-        }
+        result = agent._confirmation_node(state)
 
-        with patch.object(
-            type(agent),
-            "_pii_agent",
-            new_callable=lambda: property(lambda self: mock_agent),
-        ):
-            result = agent._pii_node(state)
-
-        assert "pii" in result["completed_steps"]
-        assert "summary" in result["pii_results"]
+        assert "confirmation" in result["completed_steps"]
+        assert result["is_valid"] is False
+        data = json.loads(result["confirmation_result"])
+        assert data["confirmed"] is False
 
     # ------------------------------------------------------------------
-    # Presenter node tests
+    # Final response node tests
     # ------------------------------------------------------------------
 
-    def test_presenter_node_synthesises_results(self, agent):
-        """Test that presenter_node calls LLM with synthesis prompt and returns empty dict.
-
-        The presenter node relies on LangGraph's message streaming to deliver
-        the response to the user via AG-UI events. It must NOT return messages
-        in the state update to avoid duplicate TEXT_MESSAGE_START events.
-        """
+    def test_final_response_node_asks_for_confirmation(self, agent):
+        """Test final_response_node asks for confirmation after pricing."""
         mock_llm = Mock()
         mock_response = Mock()
-        mock_response.content = "Here are your results in a nice format."
+        mock_response.content = "Would you like to confirm? Reply yes."
         mock_llm.invoke.return_value = mock_response
 
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "messages": [],
-            "analysis_results": {"summary": "Data has 100 rows"},
-            "visualization_results": {"summary": "Bar chart created"},
-            "calculation_results": {},
-            "pii_results": {},
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="I want 2 pizzas")],
+            "is_valid": True,
+            "has_order_intent": True,
+            "is_confirmation_reply": False,
+            "pricing_result": json.dumps({"grand_total": 20}),
+            "completed_steps": ["extraction", "validation", "pricing"],
         }
 
         with patch.object(agent, "llm", return_value=mock_llm):
-            result = agent._presenter_node(state)
+            result = agent._final_response_node(state)
 
-        # LLM must be called to produce the streaming response
         mock_llm.invoke.assert_called_once()
-        # The synthesis prompt should mention the specialist results
         call_args = mock_llm.invoke.call_args[0][0]
-        assert "Data has 100 rows" in call_args
-        assert "Bar chart created" in call_args
-        # Must return empty dict to avoid duplicate AG-UI text message events
+        assert "confirm" in call_args.lower()
         assert result == {}
 
-    def test_presenter_node_handles_conversational_message(self, agent):
-        """Test that presenter_node responds conversationally when no specialists needed.
-
-        The presenter node relies on LangGraph's message streaming to deliver
-        the response to the user via AG-UI events. It must NOT return messages
-        in the state update to avoid duplicate TEXT_MESSAGE_START events.
-        """
+    def test_final_response_node_confirmed_order(self, agent):
+        """Test final_response_node with a confirmed order."""
         mock_llm = Mock()
         mock_response = Mock()
-        mock_response.content = (
-            "Hello! I can help with data analysis, charts, math, and PII removal."
-        )
+        mock_response.content = "Your order is confirmed! 🎉"
         mock_llm.invoke.return_value = mock_response
 
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "messages": [HumanMessage(content="hello")],
-            "analysis_results": {},
-            "visualization_results": {},
-            "calculation_results": {},
-            "pii_results": {},
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="yes")],
+            "is_valid": True,
+            "has_order_intent": False,
+            "is_confirmation_reply": True,
+            "confirmation_result": json.dumps(
+                {"confirmed": True, "message": "Order confirmed!", "grand_total": 20}
+            ),
+            "completed_steps": ["intake", "confirmation"],
         }
 
         with patch.object(agent, "llm", return_value=mock_llm):
-            result = agent._presenter_node(state)
+            result = agent._final_response_node(state)
 
-        # LLM must be called to produce the streaming response
         mock_llm.invoke.assert_called_once()
-        # The conversational prompt should include the user message
+        assert result == {}
+
+    def test_final_response_node_cancelled_order(self, agent):
+        """Test final_response_node with a cancelled order."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "Order cancelled. Feel free to order again!"
+        mock_llm.invoke.return_value = mock_response
+
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="no")],
+            "is_valid": False,
+            "has_order_intent": False,
+            "is_confirmation_reply": True,
+            "confirmation_result": json.dumps(
+                {"confirmed": False, "message": "Order cancelled.", "grand_total": 0}
+            ),
+            "completed_steps": ["intake", "confirmation"],
+        }
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._final_response_node(state)
+
+        mock_llm.invoke.assert_called_once()
+        assert result == {}
+
+    def test_final_response_node_invalid_order(self, agent):
+        """Test final_response_node with an invalid order."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "Sorry, sushi is not on our menu."
+        mock_llm.invoke.return_value = mock_response
+
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="I want sushi")],
+            "is_valid": False,
+            "has_order_intent": True,
+            "is_confirmation_reply": False,
+            "validation_result": json.dumps(
+                {"is_valid": False, "errors": ["'sushi' is not on the menu."]}
+            ),
+            "completed_steps": ["extraction", "validation"],
+        }
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._final_response_node(state)
+
+        mock_llm.invoke.assert_called_once()
+        call_args = mock_llm.invoke.call_args[0][0]
+        assert "sushi" in call_args.lower()
+        assert result == {}
+
+    def test_final_response_node_conversational(self, agent):
+        """Test final_response_node with a conversational (non-order) message."""
+        mock_llm = Mock()
+        mock_response = Mock()
+        mock_response.content = "Hello! Welcome to our restaurant."
+        mock_llm.invoke.return_value = mock_response
+
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [HumanMessage(content="hello")],
+            "is_valid": False,
+            "has_order_intent": False,
+            "is_confirmation_reply": False,
+            "completed_steps": ["intake"],
+        }
+
+        with patch.object(agent, "llm", return_value=mock_llm):
+            result = agent._final_response_node(state)
+
+        mock_llm.invoke.assert_called_once()
         call_args = mock_llm.invoke.call_args[0][0]
         assert "hello" in call_args
-        # Must return empty dict to avoid duplicate AG-UI text message events
         assert result == {}
 
     # ------------------------------------------------------------------
@@ -812,7 +981,7 @@ class TestMyAgentLangGraph:
 
     def test_extract_latest_user_message(self):
         """Test _extract_latest_user_message gets the last human message."""
-        state: DataProcessingState = {  # type: ignore[assignment]
+        state: OrderState = {  # type: ignore[assignment]
             "messages": [
                 HumanMessage(content="first question"),
                 AIMessage(content="response"),
@@ -823,48 +992,299 @@ class TestMyAgentLangGraph:
 
     def test_extract_latest_user_message_empty(self):
         """Test _extract_latest_user_message returns empty string when no messages."""
-        state: DataProcessingState = {"messages": []}  # type: ignore[assignment]
+        state: OrderState = {"messages": []}  # type: ignore[assignment]
         assert _extract_latest_user_message(state) == ""
 
-    def test_gather_prior_results_with_data(self):
-        """Test _gather_prior_results collects available results."""
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "analysis_results": {"summary": "analysis done"},
-            "visualization_results": {},
-            "calculation_results": {"summary": "calc done"},
-            "pii_results": {},
+    def test_extract_tool_output_found(self):
+        """Test _extract_tool_output finds the correct tool output."""
+        result = {
+            "messages": [
+                HumanMessage(content="test"),
+                ToolMessage(
+                    content='{"items": []}',
+                    name="extract_order_items",
+                    tool_call_id="1",
+                ),
+                AIMessage(content="Done"),
+            ]
         }
-        result = _gather_prior_results(state)
-        assert "analysis done" in result
-        assert "calc done" in result
-        assert (
-            "visualization" not in result.lower()
-            or "Previous visualization" not in result
-        )
+        output = _extract_tool_output(result, "extract_order_items")
+        assert output == '{"items": []}'
 
-    def test_gather_prior_results_empty(self):
-        """Test _gather_prior_results returns empty string when no results."""
-        state: DataProcessingState = {  # type: ignore[assignment]
-            "analysis_results": {},
-            "visualization_results": {},
-            "calculation_results": {},
-            "pii_results": {},
+    def test_extract_tool_output_not_found(self):
+        """Test _extract_tool_output returns empty string when tool not found."""
+        result = {
+            "messages": [
+                HumanMessage(content="test"),
+                AIMessage(content="Done"),
+            ]
         }
-        assert _gather_prior_results(state) == ""
+        output = _extract_tool_output(result, "extract_order_items")
+        assert output == ""
+
+    def test_is_awaiting_confirmation_true(self):
+        """Test _is_awaiting_confirmation returns True when AI asked for order confirmation."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Would you like to confirm this order? Reply yes to confirm."),
+                HumanMessage(content="yes"),
+            ]
+        }
+        assert _is_awaiting_confirmation(state) is True
+
+    def test_is_awaiting_confirmation_false(self):
+        """Test _is_awaiting_confirmation returns False when AI didn't ask."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Hello! How can I help you?"),
+                HumanMessage(content="yes"),
+            ]
+        }
+        assert _is_awaiting_confirmation(state) is False
+
+    def test_is_awaiting_confirmation_false_for_menu_question(self):
+        """Test _is_awaiting_confirmation returns False for 'would you like to order?' messages."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Sure — I can help! Our menu: Pizza: 10 dollars. What would you like to order?"),
+                HumanMessage(content="I want 2 pizzas with 15 cokes"),
+            ]
+        }
+        assert _is_awaiting_confirmation(state) is False
+
+    def test_is_awaiting_confirmation_empty(self):
+        """Test _is_awaiting_confirmation returns False with no messages."""
+        state: OrderState = {"messages": []}  # type: ignore[assignment]
+        assert _is_awaiting_confirmation(state) is False
+
+    def test_is_awaiting_confirmation_skips_system_messages(self):
+        """Test _is_awaiting_confirmation skips SystemMessages between AI and Human."""
+        from langchain_core.messages import SystemMessage
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Would you like to confirm? Reply yes to confirm."),
+                SystemMessage(content="You are a Smart Order Assistant."),
+                HumanMessage(content="yes"),
+            ]
+        }
+        assert _is_awaiting_confirmation(state) is True
+
+    def test_is_awaiting_confirmation_only_human_message(self):
+        """Test _is_awaiting_confirmation returns False with only a HumanMessage."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                HumanMessage(content="yes"),
+            ]
+        }
+        assert _is_awaiting_confirmation(state) is False
+
+    def test_extract_pricing_from_history_found(self):
+        """Test _extract_pricing_from_history finds pricing JSON in AI message."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(
+                    content='Here is your order: {"grand_total": 20, "line_items": [{"item": "pizza", "quantity": 2}]}'
+                ),
+            ]
+        }
+        result = _extract_pricing_from_history(state)
+        assert result != ""
+        data = json.loads(result)
+        assert data["grand_total"] == 20
+
+    def test_extract_pricing_from_history_not_found(self):
+        """Test _extract_pricing_from_history returns empty when no pricing data."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Hello! How can I help you?"),
+            ]
+        }
+        result = _extract_pricing_from_history(state)
+        assert result == ""
+
+    def test_extract_total_from_history_found(self):
+        """Test _extract_total_from_history finds total from human-readable text."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(
+                    content="2x pizza = 20 dollars\n3x burger = 24 dollars\nTotal: 59 dollars"
+                ),
+            ]
+        }
+        assert _extract_total_from_history(state) == 59
+
+    def test_extract_total_from_history_grand_total(self):
+        """Test _extract_total_from_history finds 'Grand Total' pattern."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(
+                    content="💰 Grand Total: 42 dollars\nWould you like to confirm?"
+                ),
+            ]
+        }
+        assert _extract_total_from_history(state) == 42
+
+    def test_extract_total_from_history_not_found(self):
+        """Test _extract_total_from_history returns 0 when no total found."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Hello! How can I help you?"),
+            ]
+        }
+        assert _extract_total_from_history(state) == 0
+
+    def test_extract_order_summary_from_history_found(self):
+        """Test _extract_order_summary_from_history finds the summary message."""
+        summary = "🧾 Order Summary:\n- pizza 2x\nTotal: 20 dollars\nWould you like to confirm?"
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content="Hello!"),
+                AIMessage(content=summary),
+            ]
+        }
+        assert _extract_order_summary_from_history(state) == summary
+
+    def test_extract_order_summary_from_history_not_found(self):
+        """Test _extract_order_summary_from_history returns empty when no summary."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(content ="Hello! How can I help you?"),
+            ]
+        }
+        assert _extract_order_summary_from_history(state) == ""
+
+    def test_confirmation_node_extracts_total_from_text(self, agent):
+        """Test that confirmation_node extracts grand_total from human-readable AI text."""
+        state: OrderState = {  # type: ignore[assignment]
+            "messages": [
+                AIMessage(
+                    content="🧾 Order Summary:\n- pizza 2x = 20 dollars\nTotal: 59 dollars\nWould you like to confirm? Reply yes to confirm."
+                ),
+                HumanMessage(content="yes"),
+            ],
+            "completed_steps": ["intake"],
+        }
+
+        result = agent._confirmation_node(state)
+
+        assert "confirmation" in result["completed_steps"]
+        assert result["is_valid"] is True
+        data = json.loads(result["confirmation_result"])
+        assert data["confirmed"] is True
+        assert data["grand_total"] == 59
 
     # ------------------------------------------------------------------
-    # TaskClassification model tests
+    # Direct tool tests
     # ------------------------------------------------------------------
 
-    def test_task_classification_model(self):
-        """Test TaskClassification pydantic model."""
-        tc = TaskClassification(
-            needs_analysis=True,
-            needs_visualization=False,
-            needs_calculation=True,
-            needs_pii_removal=False,
+    def test_extract_order_items_tool_with_quantities(self):
+        """Test extract_order_items extracts items with quantities."""
+        result = extract_order_items.invoke(
+            {"user_input": "I want 2 pizzas and 3 cokes"}
         )
-        assert tc.needs_analysis is True
-        assert tc.needs_visualization is False
-        assert tc.needs_calculation is True
-        assert tc.needs_pii_removal is False
+        data = json.loads(result)
+        assert len(data["items"]) == 2
+        items_dict = {i["item"]: i["quantity"] for i in data["items"]}
+        assert items_dict["pizza"] == 2
+        assert items_dict["coke"] == 3
+
+    def test_extract_order_items_tool_without_quantities(self):
+        """Test extract_order_items defaults to quantity 1."""
+        result = extract_order_items.invoke({"user_input": "I want a burger"})
+        data = json.loads(result)
+        assert len(data["items"]) == 1
+        assert data["items"][0]["item"] == "burger"
+        assert data["items"][0]["quantity"] == 1
+
+    def test_extract_order_items_tool_no_items(self):
+        """Test extract_order_items with no menu items in input."""
+        result = extract_order_items.invoke({"user_input": "hello there"})
+        data = json.loads(result)
+        assert len(data["items"]) == 0
+        assert "error" in data
+
+    def test_validate_order_tool_valid(self):
+        """Test validate_order with valid items."""
+        input_json = json.dumps({"items": [{"item": "pizza", "quantity": 2}]})
+        result = validate_order.invoke({"extracted_items_json": input_json})
+        data = json.loads(result)
+        assert data["is_valid"] is True
+        assert len(data["errors"]) == 0
+
+    def test_validate_order_tool_invalid_item(self):
+        """Test validate_order with an item not on the menu."""
+        input_json = json.dumps({"items": [{"item": "sushi", "quantity": 1}]})
+        result = validate_order.invoke({"extracted_items_json": input_json})
+        data = json.loads(result)
+        assert data["is_valid"] is False
+        assert any("sushi" in e for e in data["errors"])
+
+    def test_validate_order_tool_quantity_exceeds_max(self):
+        """Test validate_order with quantity exceeding 10."""
+        input_json = json.dumps({"items": [{"item": "pizza", "quantity": 15}]})
+        result = validate_order.invoke({"extracted_items_json": input_json})
+        data = json.loads(result)
+        assert data["is_valid"] is False
+        assert any("exceeds" in e for e in data["errors"])
+
+    def test_validate_order_tool_empty_items(self):
+        """Test validate_order with no items."""
+        input_json = json.dumps({"items": []})
+        result = validate_order.invoke({"extracted_items_json": input_json})
+        data = json.loads(result)
+        assert data["is_valid"] is False
+
+    def test_calculate_order_price_tool(self):
+        """Test calculate_order_price calculates correctly."""
+        input_json = json.dumps(
+            {
+                "items": [
+                    {"item": "pizza", "quantity": 2},
+                    {"item": "coke", "quantity": 1},
+                ]
+            }
+        )
+        result = calculate_order_price.invoke({"validated_items_json": input_json})
+        data = json.loads(result)
+        assert data["grand_total"] == 23  # 2*10 + 1*3
+        assert len(data["line_items"]) == 2
+
+    def test_confirm_order_tool(self):
+        """Test confirm_order auto-approves valid orders."""
+        input_json = json.dumps(
+            {
+                "line_items": [
+                    {"item": "pizza", "quantity": 2, "unit_price": 10, "line_total": 20}
+                ],
+                "grand_total": 20,
+            }
+        )
+        result = confirm_order.invoke({"pricing_json": input_json})
+        data = json.loads(result)
+        assert data["confirmed"] is True
+        assert data["grand_total"] == 20
+
+    def test_format_order_response_tool_valid(self):
+        """Test format_order_response with a confirmed order."""
+        input_json = json.dumps(
+            {
+                "confirmed": True,
+                "message": "Order confirmed!",
+                "grand_total": 20,
+            }
+        )
+        result = format_order_response.invoke({"order_data_json": input_json})
+        assert "🎉" in result
+        assert "Order confirmed" in result
+
+    def test_format_order_response_tool_invalid(self):
+        """Test format_order_response with an invalid order."""
+        input_json = json.dumps(
+            {
+                "is_valid": False,
+                "errors": ["'sushi' is not on the menu."],
+            }
+        )
+        result = format_order_response.invoke({"order_data_json": input_json})
+        assert "⚠️" in result
+        assert "sushi" in result
