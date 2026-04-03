@@ -20,7 +20,7 @@ general:
             validates them against the menu, calculates pricing, and
             presents an order summary for confirmation.
           tags: [order, food, menu]
-          examples: [I want 2 pizzas and 3 cokes, Can I get a burger and a coke please?]
+          examples: ["I want 2 pizzas and 3 cokes", "Can I get a burger and a coke please?"]
         - id: modify_order
           name: Modify Order
           description: >
@@ -37,14 +37,14 @@ general:
             Processes explicit order confirmations from the customer
             and finalizes the order.
           tags: [order, confirm, finalize]
-          examples: ['Yes, confirm my order', Go ahead, 'Sure, that looks good']
+          examples: ['Yes, confirm my order', 'Go ahead', 'Sure, that looks good']
         - id: cancel_order
           name: Cancel Order
           description: >
             Handles order cancellations when the customer decides
             not to proceed with the order.
           tags: [order, cancel]
-          examples: [No thanks, Cancel my order, Never mind]
+          examples: ["No thanks", "Cancel my order", "Never mind"]
 llms:
   datarobot_llm:
     _type: datarobot-llm-component
