@@ -603,7 +603,9 @@ class TestMyAgentLangGraph:
 
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
-                AIMessage(content="Would you like to confirm this order? Reply yes to confirm."),
+                AIMessage(
+                    content="Would you like to confirm this order? Reply yes to confirm."
+                ),
                 HumanMessage(content="yes"),
             ],
             "completed_steps": [],
@@ -624,7 +626,9 @@ class TestMyAgentLangGraph:
 
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
-                AIMessage(content="Would you like to confirm this order? Reply yes to confirm."),
+                AIMessage(
+                    content="Would you like to confirm this order? Reply yes to confirm."
+                ),
                 HumanMessage(content="no"),
             ],
             "completed_steps": [],
@@ -638,7 +642,9 @@ class TestMyAgentLangGraph:
         assert result["is_confirmation_reply"] is False
         assert result["has_order_intent"] is False
 
-    def test_intake_node_confirmation_without_pending_order_becomes_greeting(self, agent):
+    def test_intake_node_confirmation_without_pending_order_becomes_greeting(
+        self, agent
+    ):
         """Test that 'yes' without a pending order is treated as greeting."""
         mock_llm = Mock()
         mock_response = Mock()
@@ -657,7 +663,9 @@ class TestMyAgentLangGraph:
         assert result["intent"] == "greeting"
         assert result["is_confirmation_reply"] is False
 
-    def test_intake_node_cancellation_without_pending_order_becomes_greeting(self, agent):
+    def test_intake_node_cancellation_without_pending_order_becomes_greeting(
+        self, agent
+    ):
         """Test that 'cancel' without a pending order is treated as greeting."""
         mock_llm = Mock()
         mock_response = Mock()
@@ -693,7 +701,9 @@ class TestMyAgentLangGraph:
         # Should parse "new_order" from the response
         assert result["intent"] == "new_order"
 
-    def test_intake_node_completely_unexpected_llm_output_defaults_to_greeting(self, agent):
+    def test_intake_node_completely_unexpected_llm_output_defaults_to_greeting(
+        self, agent
+    ):
         """Test that completely unexpected LLM output defaults to greeting."""
         mock_llm = Mock()
         mock_response = Mock()
@@ -730,7 +740,9 @@ class TestMyAgentLangGraph:
                 assert kwargs["name"] == "extraction_agent"
 
     @patch("agent.myagent.create_agent")
-    def test_modification_extraction_agent_created_with_correct_tool(self, mock_create_agent, agent):
+    def test_modification_extraction_agent_created_with_correct_tool(
+        self, mock_create_agent, agent
+    ):
         """Test that _modification_extraction_agent is created with extract_order_items tool."""
         mock_llm = Mock()
         with patch.object(agent, "llm", return_value=mock_llm):
@@ -888,12 +900,18 @@ class TestMyAgentLangGraph:
     def test_validation_node_stores_results_valid(self, agent):
         """Test that _validation_node correctly identifies a valid order."""
         valid_json = json.dumps(
-            {"is_valid": True, "items": [{"item": "pizza", "quantity": 2}], "errors": []}
+            {
+                "is_valid": True,
+                "items": [{"item": "pizza", "quantity": 2}],
+                "errors": [],
+            }
         )
         mock_agent = Mock()
         mock_agent.invoke.return_value = {
             "messages": [
-                ToolMessage(content=valid_json, name="validate_order", tool_call_id="1"),
+                ToolMessage(
+                    content=valid_json, name="validate_order", tool_call_id="1"
+                ),
                 AIMessage(content="All items are valid!"),
             ]
         }
@@ -917,12 +935,18 @@ class TestMyAgentLangGraph:
     def test_validation_node_stores_results_invalid(self, agent):
         """Test that _validation_node correctly identifies an invalid order."""
         invalid_json = json.dumps(
-            {"is_valid": False, "items": [{"item": "sushi", "quantity": 1}], "errors": ["'sushi' is not on the menu."]}
+            {
+                "is_valid": False,
+                "items": [{"item": "sushi", "quantity": 1}],
+                "errors": ["'sushi' is not on the menu."],
+            }
         )
         mock_agent = Mock()
         mock_agent.invoke.return_value = {
             "messages": [
-                ToolMessage(content=invalid_json, name="validate_order", tool_call_id="1"),
+                ToolMessage(
+                    content=invalid_json, name="validate_order", tool_call_id="1"
+                ),
                 AIMessage(content="Sorry, sushi is not on our menu."),
             ]
         }
@@ -947,14 +971,18 @@ class TestMyAgentLangGraph:
         """Test that _pricing_node invokes the sub-agent and stores pricing data."""
         pricing_json = json.dumps(
             {
-                "line_items": [{"item": "pizza", "quantity": 2, "unit_price": 10, "line_total": 20}],
+                "line_items": [
+                    {"item": "pizza", "quantity": 2, "unit_price": 10, "line_total": 20}
+                ],
                 "grand_total": 20,
             }
         )
         mock_agent = Mock()
         mock_agent.invoke.return_value = {
             "messages": [
-                ToolMessage(content=pricing_json, name="calculate_order_price", tool_call_id="1"),
+                ToolMessage(
+                    content=pricing_json, name="calculate_order_price", tool_call_id="1"
+                ),
                 AIMessage(content="2x pizza = 20 dollars. Total: 20 dollars."),
             ]
         }
@@ -1194,7 +1222,9 @@ class TestMyAgentLangGraph:
         """Test _has_pending_order returns True when AI asked for order confirmation."""
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
-                AIMessage(content="Would you like to confirm this order? Reply yes to confirm."),
+                AIMessage(
+                    content="Would you like to confirm this order? Reply yes to confirm."
+                ),
                 HumanMessage(content="yes"),
             ]
         }
@@ -1214,7 +1244,9 @@ class TestMyAgentLangGraph:
         """Test _has_pending_order returns False for 'would you like to order?' messages."""
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
-                AIMessage(content="Sure — I can help! Our menu: Pizza: 10 dollars. What would you like to order?"),
+                AIMessage(
+                    content="Sure — I can help! Our menu: Pizza: 10 dollars. What would you like to order?"
+                ),
                 HumanMessage(content="I want 2 pizzas with 15 cokes"),
             ]
         }
@@ -1228,6 +1260,7 @@ class TestMyAgentLangGraph:
     def test_has_pending_order_skips_system_messages(self):
         """Test _has_pending_order skips SystemMessages between AI and Human."""
         from langchain_core.messages import SystemMessage
+
         state: OrderState = {  # type: ignore[assignment]
             "messages": [
                 AIMessage(content="Would you like to confirm? Reply yes to confirm."),

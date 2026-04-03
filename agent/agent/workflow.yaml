@@ -6,45 +6,45 @@ general:
       mode: 'off'
     a2a:
       server:
-        name: Data Processing Assistant
+        name: Smart Order Assistant
         description: >
-          A multi-agent data-processing assistant with specialized tools for
-          data analysis, chart generation, math calculations, and PII removal.
-          Orchestrated by a supervisor node with conditional LangGraph edges.
+          A multi-agent food ordering assistant that processes customer orders
+          through extraction, validation, pricing, and confirmation steps.
+          Uses LLM-based intent classification with conditional LangGraph edges
+          for natural conversation handling and order modifications.
       skills:
-        - id: data_analysis
-          name: Analyse Data
+        - id: place_order
+          name: Place Food Order
           description: >
-            Explores, summarises, filters, groups, and statistically analyses
-            tabular or JSON data using pandas DataFrame operations.
-          tags: [data, analysis, pandas]
+            Extracts food items and quantities from customer messages,
+            validates them against the menu, calculates pricing, and
+            presents an order summary for confirmation.
+          tags: [order, food, menu]
+          examples: [I want 2 pizzas and 3 cokes, Can I get a burger and a coke please?]
+        - id: modify_order
+          name: Modify Order
+          description: >
+            Allows customers to modify a pending order before confirmation.
+            Merges changes with the existing order and re-validates and re-prices.
+          tags: [order, modify, change]
           examples:
-            - 'Describe this dataset: [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]'
-            - Filter rows where age > 25 from this data.
-        - id: visualization
-          name: Generate Charts
+            - No, add 3 burgers to my order
+            - Actually, change to 5 pizzas instead
+            - Can you remove the coke and add a burger?
+        - id: confirm_order
+          name: Confirm Order
           description: >
-            Creates bar, line, pie, scatter, and histogram charts from JSON data.
-          tags: [chart, visualization, plot]
-          examples:
-            - 'Create a bar chart from this data: {"x": ["A", "B", "C"], "y": [10, 20, 30]}'
-            - Plot a pie chart of sales by region.
-        - id: math_calculation
-          name: Calculate
+            Processes explicit order confirmations from the customer
+            and finalizes the order.
+          tags: [order, confirm, finalize]
+          examples: ['Yes, confirm my order', Go ahead, 'Sure, that looks good']
+        - id: cancel_order
+          name: Cancel Order
           description: >
-            Evaluates mathematical expressions using Python's math library and numpy.
-            Supports arithmetic, trigonometry, logarithms, statistics, and linear algebra.
-          tags: [math, calculation, statistics]
-          examples: [Calculate sqrt(144) + log(100), 'What is the mean of [10, 20, 30, 40, 50]?']
-        - id: pii_removal
-          name: Remove PII
-          description: >
-            Detects and redacts personally identifiable information from text,
-            including emails, phone numbers, SSNs, credit card numbers, and IP addresses.
-          tags: [pii, privacy, redaction]
-          examples:
-            - 'Remove PII from: Contact john@example.com or call 555-123-4567'
-            - Redact personal information from this text.
+            Handles order cancellations when the customer decides
+            not to proceed with the order.
+          tags: [order, cancel]
+          examples: [No thanks, Cancel my order, Never mind]
 llms:
   datarobot_llm:
     _type: datarobot-llm-component
@@ -52,10 +52,11 @@ workflow:
   _type: langgraph_agent
   llm_name: datarobot_llm
   description: >
-    Multi-agent data-processing workflow with supervisor-based routing.
-    Specialist agents: Data Analysis (pandas), Visualization (charts),
-    Math Calculation (numpy/math), and PII Removal. Orchestrated by a
-    deterministic supervisor node with conditional LangGraph edges.
+    Multi-agent food ordering workflow with LLM-based intent classification.
+    Specialist agents: Order Extraction, Order Validation, Order Pricing,
+    Order Confirmation, and Response Formatting. Orchestrated by an
+    LLM-powered intake node with conditional LangGraph edges that correctly
+    handles new orders, modifications, confirmations, and cancellations.
 authentication:
   datarobot_auth:
     _type: datarobot_api_key

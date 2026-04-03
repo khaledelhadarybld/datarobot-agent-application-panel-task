@@ -543,16 +543,26 @@ class MyAgent(LangGraphAgent):
         # Use the LLM to classify intent
         classification_prompt = (
             f"{INTAKE_CLASSIFICATION_PROMPT}{context}\n\n"
-            f"Customer message: \"{user_message}\""
+            f'Customer message: "{user_message}"'
         )
 
         llm = self.llm()
         response = llm.invoke(classification_prompt)
-        intent_raw = response.content if isinstance(response.content, str) else str(response.content)
+        intent_raw = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
         intent = intent_raw.strip().lower()
 
         # Normalize the intent to one of the known values
-        valid_intents = {"new_order", "modification", "confirmation", "cancellation", "greeting"}
+        valid_intents = {
+            "new_order",
+            "modification",
+            "confirmation",
+            "cancellation",
+            "greeting",
+        }
         if intent not in valid_intents:
             # Fallback: if the LLM returned something unexpected, try to parse it
             for valid in valid_intents:
@@ -615,14 +625,16 @@ class MyAgent(LangGraphAgent):
         is_modification = state.get("is_modification", False)
 
         if self.verbose:
-            print(f"[extraction_node] Input: {user_message}, is_modification={is_modification}")
+            print(
+                f"[extraction_node] Input: {user_message}, is_modification={is_modification}"
+            )
 
         if is_modification:
             # Build the full updated order from conversation history + modification
             previous_order = _extract_previous_order_from_history(state)
             combined_order = (
                 f"The customer's PREVIOUS order was:\n{previous_order}\n\n"
-                f"The customer now says: \"{user_message}\"\n\n"
+                f'The customer now says: "{user_message}"\n\n'
                 "INSTRUCTIONS:\n"
                 "1. First, compute the MERGED order totals by combining the previous "
                 "order with the customer's changes. For example:\n"
@@ -633,7 +645,9 @@ class MyAgent(LangGraphAgent):
                 "   Do NOT pass the previous order text or modification request to the tool."
             )
             context_msg = HumanMessage(content=combined_order)
-            result = self._modification_extraction_agent.invoke({"messages": [context_msg]})
+            result = self._modification_extraction_agent.invoke(
+                {"messages": [context_msg]}
+            )
         else:
             # New order — extract from current message
             context_msg = HumanMessage(
@@ -1086,9 +1100,8 @@ def _has_pending_order(state: OrderState) -> bool:
                 ]
             )
             if not has_confirm_word:
-                has_confirm_word = (
-                    "confirm" in content_lower
-                    and ("order" in content_lower or "total" in content_lower)
+                has_confirm_word = "confirm" in content_lower and (
+                    "order" in content_lower or "total" in content_lower
                 )
             return has_confirm_word
     return False
